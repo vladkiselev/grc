@@ -1,11 +1,7 @@
 services:
   - type: web
     name: car-rental-polygon-search
-    runtime: static
-    staticPublishPath: .
-    buildCommand: ""
-    pullRequestPreviewsEnabled: false
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    plan: free

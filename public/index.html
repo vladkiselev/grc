@@ -278,40 +278,26 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-const OVERPASS_MIRRORS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://overpass.openstreetmap.ru/api/interpreter'
-];
-
-async function fetchWithMirrors(query, onAttempt) {
-  let lastErr = null;
-  for (const url of OVERPASS_MIRRORS) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    try {
-      onAttempt(url);
-      const resp = await fetch(url, {
-        method: 'POST',
-        body: 'data=' + encodeURIComponent(query),
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-      if (!resp.ok) {
-        lastErr = new Error(`${url} вернул статус ${resp.status}`);
-        continue;
-      }
-      return await resp.json();
-    } catch (err) {
-      clearTimeout(timeoutId);
-      lastErr = err.name === 'AbortError'
-        ? new Error(`${url} не ответил за 15 секунд`)
-        : err;
-      continue;
+async function fetchViaProxy(query) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  try {
+    const resp = await fetch('/api/overpass', {
+      method: 'POST',
+      body: JSON.stringify({ query }),
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error(body.error || `Сервер вернул статус ${resp.status}`);
     }
+    return await resp.json();
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err.name === 'AbortError' ? new Error('Запрос не ответил за 30 секунд') : err;
   }
-  throw lastErr || new Error('Все зеркала Overpass недоступны');
 }
 
 searchBtn.addEventListener('click', async () => {
@@ -319,19 +305,19 @@ searchBtn.addEventListener('click', async () => {
   searchBtn.disabled = true;
   resultsEl.innerHTML = '';
 
+  statusEl.innerHTML = '<span class="spinner"></span>Запрашиваю данные (до 30 сек)...';
+
   try {
     const polyStr = buildPolyString(currentPolygonLatLngs);
     const query = buildQuery(polyStr);
-    const data = await fetchWithMirrors(query, (url) => {
-      statusEl.innerHTML = `<span class="spinner"></span>Запрашиваю ${new URL(url).hostname} (до 15 сек)...`;
-    });
+    const data = await fetchViaProxy(query);
     const rows = normalize(data.elements || []);
     lastRows = rows;
     statusEl.textContent = `Найдено объектов: ${rows.length}`;
     renderResults(rows);
   } catch (err) {
     statusEl.textContent = 'Ошибка запроса: ' + err.message;
-    resultsEl.innerHTML = '<div class="empty-state">Все зеркала Overpass недоступны. Попробуйте ещё раз через минуту.</div>';
+    resultsEl.innerHTML = '<div class="empty-state">Не удалось получить данные. Попробуйте ещё раз через минуту.</div>';
   } finally {
     searchBtn.disabled = false;
   }
