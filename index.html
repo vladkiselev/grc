@@ -287,20 +287,27 @@ const OVERPASS_MIRRORS = [
 async function fetchWithMirrors(query, onAttempt) {
   let lastErr = null;
   for (const url of OVERPASS_MIRRORS) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     try {
       onAttempt(url);
       const resp = await fetch(url, {
         method: 'POST',
         body: 'data=' + encodeURIComponent(query),
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
       if (!resp.ok) {
         lastErr = new Error(`${url} вернул статус ${resp.status}`);
         continue;
       }
       return await resp.json();
     } catch (err) {
-      lastErr = err;
+      clearTimeout(timeoutId);
+      lastErr = err.name === 'AbortError'
+        ? new Error(`${url} не ответил за 15 секунд`)
+        : err;
       continue;
     }
   }
@@ -316,7 +323,7 @@ searchBtn.addEventListener('click', async () => {
     const polyStr = buildPolyString(currentPolygonLatLngs);
     const query = buildQuery(polyStr);
     const data = await fetchWithMirrors(query, (url) => {
-      statusEl.innerHTML = `<span class="spinner"></span>Запрашиваю ${new URL(url).hostname}...`;
+      statusEl.innerHTML = `<span class="spinner"></span>Запрашиваю ${new URL(url).hostname} (до 15 сек)...`;
     });
     const rows = normalize(data.elements || []);
     lastRows = rows;
