@@ -278,29 +278,53 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+const OVERPASS_MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.openstreetmap.ru/api/interpreter'
+];
+
+async function fetchWithMirrors(query, onAttempt) {
+  let lastErr = null;
+  for (const url of OVERPASS_MIRRORS) {
+    try {
+      onAttempt(url);
+      const resp = await fetch(url, {
+        method: 'POST',
+        body: 'data=' + encodeURIComponent(query),
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+      if (!resp.ok) {
+        lastErr = new Error(`${url} вернул статус ${resp.status}`);
+        continue;
+      }
+      return await resp.json();
+    } catch (err) {
+      lastErr = err;
+      continue;
+    }
+  }
+  throw lastErr || new Error('Все зеркала Overpass недоступны');
+}
+
 searchBtn.addEventListener('click', async () => {
   if (!currentPolygonLatLngs) return;
   searchBtn.disabled = true;
-  statusEl.innerHTML = '<span class="spinner"></span>Запрашиваю Overpass API...';
   resultsEl.innerHTML = '';
 
   try {
     const polyStr = buildPolyString(currentPolygonLatLngs);
     const query = buildQuery(polyStr);
-    const resp = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      body: 'data=' + encodeURIComponent(query),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    const data = await fetchWithMirrors(query, (url) => {
+      statusEl.innerHTML = `<span class="spinner"></span>Запрашиваю ${new URL(url).hostname}...`;
     });
-    if (!resp.ok) throw new Error(`Overpass вернул статус ${resp.status}`);
-    const data = await resp.json();
     const rows = normalize(data.elements || []);
     lastRows = rows;
     statusEl.textContent = `Найдено объектов: ${rows.length}`;
     renderResults(rows);
   } catch (err) {
     statusEl.textContent = 'Ошибка запроса: ' + err.message;
-    resultsEl.innerHTML = '<div class="empty-state">Не удалось получить данные. Попробуйте ещё раз через несколько секунд — публичный Overpass-сервер иногда перегружен.</div>';
+    resultsEl.innerHTML = '<div class="empty-state">Все зеркала Overpass недоступны. Попробуйте ещё раз через минуту.</div>';
   } finally {
     searchBtn.disabled = false;
   }
