@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Car Rental Polygon Search</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #16191f;
+    --panel-border: #262a33;
+    --text: #e8eaed;
+    --text-dim: #9aa0a8;
+    --accent: #4f8cff;
+    --accent-dim: #2c3e5f;
+    --danger: #ff5c5c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  #app { display: flex; height: 100vh; }
+  #map { flex: 1; height: 100%; }
+  #sidebar {
+    width: 360px;
+    min-width: 360px;
+    background: var(--panel);
+    border-left: 1px solid var(--panel-border);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  #header {
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--panel-border);
+  }
+  #header h1 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 4px 0;
+  }
+  #header p {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    margin: 0;
+    line-height: 1.5;
+  }
+  #controls {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--panel-border);
+    display: flex;
+    gap: 8px;
+  }
+  button {
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--panel-border);
+    background: #1d212a;
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  button:hover { background: #262b35; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+  button.primary:hover { background: #3d78e6; }
+  #status {
+    padding: 10px 18px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--panel-border);
+    min-height: 16px;
+  }
+  #results {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+  .result-item {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--panel-border);
+    cursor: pointer;
+  }
+  .result-item:hover { background: #1c2029; }
+  .result-name {
+    font-size: 13.5px;
+    font-weight: 600;
+    margin-bottom: 3px;
+  }
+  .result-detail {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+  .result-detail a { color: var(--accent); text-decoration: none; }
+  .empty-state {
+    padding: 40px 24px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--accent-dim);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    display: inline-block;
+    animation: spin 0.7s linear infinite;
+    margin-right: 6px;
+    vertical-align: -2px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .leaflet-popup-content-wrapper { background: var(--panel); color: var(--text); }
+  .leaflet-popup-tip { background: var(--panel); }
+  .leaflet-container a.leaflet-popup-close-button { color: var(--text-dim); }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="map"></div>
+  <div id="sidebar">
+    <div id="header">
+      <h1>Car Rental — поиск по полигону</h1>
+      <p>Нарисуйте область на карте (кнопка полигона слева сверху на карте). Поиск идёт по данным OpenStreetMap через Overpass API.</p>
+    </div>
+    <div id="controls">
+      <button class="primary" id="searchBtn" disabled>Искать в полигоне</button>
+      <button id="clearBtn">Очистить</button>
+      <button id="exportBtn" disabled>Export CSV</button>
+    </div>
+    <div id="status"></div>
+    <div id="results">
+      <div class="empty-state">Нарисуйте полигон на карте и нажмите «Искать в полигоне»</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script>
+const map = L.map('map', { zoomControl: true }).setView([52.5, 13.4], 5);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors',
+  maxZoom: 19
+}).addTo(map);
+
+const drawnItems = new L.FeatureGroup();
+map.addLayer(drawnItems);
+
+const drawControl = new L.Control.Draw({
+  draw: {
+    polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: '#4f8cff' } },
+    polyline: false,
+    rectangle: false,
+    circle: false,
+    marker: false,
+    circlemarker: false
+  },
+  edit: { featureGroup: drawnItems, remove: false }
+});
+map.addControl(drawControl);
+
+const searchBtn = document.getElementById('searchBtn');
+const clearBtn = document.getElementById('clearBtn');
+const exportBtn = document.getElementById('exportBtn');
+const statusEl = document.getElementById('status');
+const resultsEl = document.getElementById('results');
+
+let currentPolygonLatLngs = null;
+let resultMarkers = L.layerGroup().addTo(map);
+let lastRows = [];
+
+map.on(L.Draw.Event.CREATED, (e) => {
+  drawnItems.clearLayers();
+  const layer = e.layer;
+  drawnItems.addLayer(layer);
+  currentPolygonLatLngs = layer.getLatLngs()[0];
+  searchBtn.disabled = false;
+});
+
+map.on(L.Draw.Event.EDITED, (e) => {
+  e.layers.eachLayer((layer) => {
+    currentPolygonLatLngs = layer.getLatLngs()[0];
+  });
+});
+
+clearBtn.addEventListener('click', () => {
+  drawnItems.clearLayers();
+  resultMarkers.clearLayers();
+  currentPolygonLatLngs = null;
+  searchBtn.disabled = true;
+  exportBtn.disabled = true;
+  lastRows = [];
+  statusEl.textContent = '';
+  resultsEl.innerHTML = '<div class="empty-state">Нарисуйте полигон на карте и нажмите «Искать в полигоне»</div>';
+});
+
+function buildPolyString(latlngs) {
+  // Overpass poly filter format: "lat1 lon1 lat2 lon2 ..."
+  return latlngs.map(p => `${p.lat.toFixed(6)} ${p.lng.toFixed(6)}`).join(' ');
+}
+
+function buildQuery(polyStr) {
+  return `
+[out:json][timeout:90];
+(
+  node["amenity"="car_rental"](poly:"${polyStr}");
+  way["amenity"="car_rental"](poly:"${polyStr}");
+  relation["amenity"="car_rental"](poly:"${polyStr}");
+  node["shop"="car_rental"](poly:"${polyStr}");
+  way["shop"="car_rental"](poly:"${polyStr}");
+);
+out center tags;
+`;
+}
+
+function normalize(elements) {
+  return elements.map(el => {
+    const tags = el.tags || {};
+    const lat = el.lat || (el.center && el.center.lat);
+    const lon = el.lon || (el.center && el.center.lon);
+    const addrParts = [tags['addr:street'], tags['addr:housenumber'], tags['addr:city']].filter(Boolean);
+    return {
+      id: `${el.type}/${el.id}`,
+      name: tags.name || '(без названия)',
+      brand: tags.brand || '',
+      phone: tags.phone || tags['contact:phone'] || '',
+      website: tags.website || tags['contact:website'] || '',
+      address: addrParts.join(', '),
+      opening_hours: tags.opening_hours || '',
+      lat, lon
+    };
+  }).filter(r => r.lat && r.lon);
+}
+
+function renderResults(rows) {
+  resultMarkers.clearLayers();
+  if (rows.length === 0) {
+    resultsEl.innerHTML = '<div class="empty-state">В этом полигоне car rental не найдены (по данным OSM). Попробуйте расширить область.</div>';
+    exportBtn.disabled = true;
+    return;
+  }
+
+  resultsEl.innerHTML = '';
+  rows.forEach((r, idx) => {
+    const marker = L.marker([r.lat, r.lon]).addTo(resultMarkers);
+    marker.bindPopup(`<b>${escapeHtml(r.name)}</b><br>${escapeHtml(r.address || '')}`);
+
+    const item = document.createElement('div');
+    item.className = 'result-item';
+    item.innerHTML = `
+      <div class="result-name">${escapeHtml(r.name)}</div>
+      <div class="result-detail">
+        ${r.address ? escapeHtml(r.address) + '<br>' : ''}
+        ${r.phone ? '☎ ' + escapeHtml(r.phone) + '<br>' : ''}
+        ${r.website ? `<a href="${escapeHtml(r.website)}" target="_blank" rel="noopener">${escapeHtml(r.website)}</a>` : ''}
+      </div>
+    `;
+    item.addEventListener('click', () => {
+      map.setView([r.lat, r.lon], 16);
+      marker.openPopup();
+    });
+    resultsEl.appendChild(item);
+  });
+
+  exportBtn.disabled = false;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+searchBtn.addEventListener('click', async () => {
+  if (!currentPolygonLatLngs) return;
+  searchBtn.disabled = true;
+  statusEl.innerHTML = '<span class="spinner"></span>Запрашиваю Overpass API...';
+  resultsEl.innerHTML = '';
+
+  try {
+    const polyStr = buildPolyString(currentPolygonLatLngs);
+    const query = buildQuery(polyStr);
+    const resp = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: 'data=' + encodeURIComponent(query),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    });
+    if (!resp.ok) throw new Error(`Overpass вернул статус ${resp.status}`);
+    const data = await resp.json();
+    const rows = normalize(data.elements || []);
+    lastRows = rows;
+    statusEl.textContent = `Найдено объектов: ${rows.length}`;
+    renderResults(rows);
+  } catch (err) {
+    statusEl.textContent = 'Ошибка запроса: ' + err.message;
+    resultsEl.innerHTML = '<div class="empty-state">Не удалось получить данные. Попробуйте ещё раз через несколько секунд — публичный Overpass-сервер иногда перегружен.</div>';
+  } finally {
+    searchBtn.disabled = false;
+  }
+});
+
+exportBtn.addEventListener('click', () => {
+  if (lastRows.length === 0) return;
+  const headers = ['id', 'name', 'brand', 'phone', 'website', 'address', 'opening_hours', 'lat', 'lon'];
+  const csvLines = [headers.join(',')];
+  lastRows.forEach(r => {
+    const line = headers.map(h => {
+      const val = (r[h] ?? '').toString().replace(/"/g, '""');
+      return `"${val}"`;
+    }).join(',');
+    csvLines.push(line);
+  });
+  const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'car_rentals_polygon.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+</script>
+</body>
+</html>
