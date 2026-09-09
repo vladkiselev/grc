@@ -34,10 +34,26 @@
     padding: 16px 18px;
     border-bottom: 1px solid var(--panel-border);
   }
+  #header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
   #header h1 {
     font-size: 15px;
     font-weight: 600;
-    margin: 0 0 4px 0;
+    margin: 0;
+  }
+  #helpBtn {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+    flex-shrink: 0;
   }
   #header p {
     font-size: 12.5px;
@@ -118,6 +134,65 @@
   .leaflet-popup-content-wrapper { background: var(--panel); color: var(--text); }
   .leaflet-popup-tip { background: var(--panel); }
   .leaflet-container a.leaflet-popup-close-button { color: var(--text-dim); }
+
+  #onboardingOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    padding: 20px;
+  }
+  #onboardingOverlay.hidden { display: none; }
+  #onboardingModal {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    padding: 28px 26px 22px;
+    max-width: 420px;
+    width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  #onboardingModal h2 {
+    font-size: 17px;
+    margin: 0 0 20px 0;
+  }
+  .onboard-step {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .onboard-num {
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--accent-dim);
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .onboard-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    margin-bottom: 3px;
+  }
+  .onboard-desc {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+  #onboardingClose {
+    width: 100%;
+    padding: 10px;
+    margin-top: 4px;
+    font-size: 13px;
+  }
 </style>
 </head>
 <body>
@@ -125,7 +200,10 @@
   <div id="map"></div>
   <div id="sidebar">
     <div id="header">
-      <h1>Car Rental — поиск по полигону</h1>
+      <div id="header-top">
+        <h1>Car Rental — поиск по полигону</h1>
+        <button id="helpBtn" title="Как пользоваться">?</button>
+      </div>
       <p>Нарисуйте область на карте (кнопка полигона слева сверху на карте). Поиск идёт по данным OpenStreetMap через Overpass API.</p>
     </div>
     <div id="controls">
@@ -140,9 +218,64 @@
   </div>
 </div>
 
+<div id="onboardingOverlay">
+  <div id="onboardingModal">
+    <h2>Как это работает</h2>
+    <div class="onboard-step">
+      <div class="onboard-num">1</div>
+      <div class="onboard-text">
+        <div class="onboard-title">Найдите значок полигона</div>
+        <div class="onboard-desc">Слева сверху на карте — три кнопки: приблизить, отдалить и нарисовать полигон (пятиугольник). Нажмите на пятиугольник.</div>
+      </div>
+    </div>
+    <div class="onboard-step">
+      <div class="onboard-num">2</div>
+      <div class="onboard-text">
+        <div class="onboard-title">Обведите нужную область</div>
+        <div class="onboard-desc">Кликайте по карте, чтобы поставить точки границы. Чтобы завершить фигуру — кликните на первую точку ещё раз или сделайте двойной клик.</div>
+      </div>
+    </div>
+    <div class="onboard-step">
+      <div class="onboard-num">3</div>
+      <div class="onboard-text">
+        <div class="onboard-title">Нажмите «Искать в полигоне»</div>
+        <div class="onboard-desc">Кнопка появится активной справа. Поиск обычно занимает от пары секунд до минуты — зависит от размера области.</div>
+      </div>
+    </div>
+    <button id="onboardingClose" class="primary">Понятно, начать</button>
+  </div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script>
+const ONBOARDING_KEY = 'car_rental_onboarding_dismissed';
+const onboardingOverlay = document.getElementById('onboardingOverlay');
+const onboardingClose = document.getElementById('onboardingClose');
+const helpBtn = document.getElementById('helpBtn');
+
+function showOnboarding() {
+  onboardingOverlay.classList.remove('hidden');
+}
+function hideOnboarding() {
+  onboardingOverlay.classList.add('hidden');
+  try { localStorage.setItem(ONBOARDING_KEY, '1'); } catch (e) { /* ignore storage errors */ }
+}
+
+let onboardingSeen = false;
+try { onboardingSeen = localStorage.getItem(ONBOARDING_KEY) === '1'; } catch (e) { /* ignore storage errors */ }
+if (!onboardingSeen) {
+  showOnboarding();
+} else {
+  onboardingOverlay.classList.add('hidden');
+}
+
+onboardingClose.addEventListener('click', hideOnboarding);
+helpBtn.addEventListener('click', showOnboarding);
+onboardingOverlay.addEventListener('click', (e) => {
+  if (e.target === onboardingOverlay) hideOnboarding();
+});
+
 const map = L.map('map', { zoomControl: true }).setView([52.5, 13.4], 5);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
