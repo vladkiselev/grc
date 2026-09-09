@@ -19,7 +19,7 @@ app.post('/api/overpass', async (req, res) => {
     return res.status(400).json({ error: 'Missing "query" string in request body' });
   }
 
-  let lastErr = null;
+  const errors = [];
   for (const url of OVERPASS_MIRRORS) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 25000);
@@ -34,21 +34,22 @@ app.post('/api/overpass', async (req, res) => {
       });
       clearTimeout(timeoutId);
       if (!resp.ok) {
-        lastErr = new Error(`${url} returned status ${resp.status}`);
+        errors.push(`${url} -> HTTP ${resp.status}`);
         continue;
       }
       const data = await resp.json();
       return res.json(data);
     } catch (err) {
       clearTimeout(timeoutId);
-      lastErr = err.name === 'AbortError'
-        ? new Error(`${url} timed out after 25s`)
-        : err;
+      const msg = err.name === 'AbortError'
+        ? `${url} -> timed out after 25s`
+        : `${url} -> ${err.cause ? err.cause.code || err.cause.message : err.message}`;
+      errors.push(msg);
       continue;
     }
   }
-  console.error('All Overpass mirrors failed:', lastErr);
-  return res.status(502).json({ error: 'All Overpass mirrors unavailable', detail: String(lastErr) });
+  console.error('All Overpass mirrors failed:\n' + errors.join('\n'));
+  return res.status(502).json({ error: 'All Overpass mirrors unavailable', detail: errors });
 });
 
 app.listen(PORT, () => {
