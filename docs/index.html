@@ -65,6 +65,7 @@
     padding: 12px 18px;
     border-bottom: 1px solid var(--panel-border);
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
   }
   button {
@@ -192,6 +193,24 @@
     padding: 10px;
     margin-top: 4px;
     font-size: 13px;
+  }
+
+  @media (max-width: 700px) {
+    #app { flex-direction: column; }
+    #map { height: 45vh; min-height: 260px; flex: none; }
+    #sidebar {
+      width: 100%;
+      min-width: 0;
+      flex: 1;
+      height: auto;
+      border-left: none;
+      border-top: 1px solid var(--panel-border);
+    }
+    #header { padding: 12px 14px; }
+    #controls { padding: 10px 14px; }
+    #controls button { flex: 1 1 auto; min-width: 100px; }
+    .result-item { padding: 12px 14px; }
+    #onboardingModal { padding: 22px 18px 18px; max-width: 340px; }
   }
 </style>
 </head>
