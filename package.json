@@ -1,16 +1,10 @@
 {
-  "name": "car-rental-polygon-search",
-  "version": "1.0.0",
+  "name": "grc-contact-finder",
+  "version": "2.0.0",
   "private": true,
-  "description": "Draw a polygon on a map and find car rental locations inside it via OSM/Overpass.",
+  "description": "API that finds contact emails on business websites for the polygon business search tool.",
   "main": "server.js",
-  "engines": {
-    "node": ">=18"
-  },
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "express": "^4.19.2"
-  }
+  "engines": { "node": ">=18" },
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "express": "^4.19.2" }
 }

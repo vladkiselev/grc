@@ -79,6 +79,8 @@
   .tag { display: inline-block; font-size: 10.5px; padding: 1px 6px; border-radius: 8px; margin-left: 4px; vertical-align: 1px; }
   .tag.generic { background: rgba(62,207,142,0.15); color: var(--ok); }
   .tag.personal { background: rgba(224,165,74,0.15); color: var(--warn); }
+  .tag.source { background: var(--accent-dim); color: var(--accent); text-decoration: none; }
+  .site-status { font-size: 11px; color: var(--text-dim); font-style: italic; }
   .empty-state { padding: 36px 24px; text-align: center; color: var(--text-dim); font-size: 13px; line-height: 1.6; }
   .spinner {
     width: 14px; height: 14px;
@@ -148,6 +150,7 @@
     <div id="controls">
       <button class="primary" id="searchBtn" disabled>Искать в полигоне</button>
       <button id="clearBtn">Очистить</button>
+      <button id="crawlBtn" disabled title="Сервер откроет сайты найденных бизнесов и поищет на них почты">Найти почты на сайтах</button>
       <button id="exportBtn" disabled>Экспорт CSV</button>
     </div>
 
@@ -188,6 +191,13 @@
     </div>
     <div class="onboard-step">
       <div class="onboard-num">4</div>
+      <div>
+        <div class="onboard-title">Найдите почты на сайтах</div>
+        <div class="onboard-desc">В OSM почты есть не у всех. Кнопка «Найти почты на сайтах» откроет сайты найденных бизнесов и поищет адреса на главной и в разделе контактов.</div>
+      </div>
+    </div>
+    <div class="onboard-step">
+      <div class="onboard-num">5</div>
       <div>
         <div class="onboard-title">Выгрузите контакты</div>
         <div class="onboard-desc">Экспорт CSV открывается в Excel. Почты помечены: <span class="tag generic">общая</span> (info@, sales@) или <span class="tag personal">возможно личная</span>.</div>
@@ -278,6 +288,18 @@ const onlyEmailCheckbox = document.getElementById('onlyEmail');
 const searchBtn = document.getElementById('searchBtn');
 const clearBtn = document.getElementById('clearBtn');
 const exportBtn = document.getElementById('exportBtn');
+const crawlBtn = document.getElementById('crawlBtn');
+
+// Адрес сервера, который ищет почты на сайтах (Render Web Service)
+const CRAWLER_API = 'https://car-rental-search-api.onrender.com';
+const CRAWL_BATCH = 10;
+const SITE_STATUS_LABELS = {
+  ok: 'сайт проверен', unreachable: 'сайт недоступен', robots_disallow: 'сайт запрещает автоматический обход',
+  timeout: 'сайт не ответил вовремя', bad_url: 'некорректный адрес сайта', error: 'ошибка проверки'
+};
+let crawlRunning = false;
+let crawlStop = false;
+let searchGen = 0;
 const statusText = document.getElementById('statusText');
 const statsEl = document.getElementById('stats');
 const resultsEl = document.getElementById('results');
@@ -300,7 +322,7 @@ typeSelect.addEventListener('change', () => {
 });
 
 // ---------- Onboarding ----------
-const ONBOARDING_KEY = 'biz_search_onboarding_v2';
+const ONBOARDING_KEY = 'biz_search_onboarding_v3';
 const onboardingOverlay = document.getElementById('onboardingOverlay');
 const onboardingClose = document.getElementById('onboardingClose');
 const helpBtn = document.getElementById('helpBtn');
@@ -354,8 +376,11 @@ clearBtn.addEventListener('click', () => {
   resultMarkers.clearLayers();
   currentPolygonLatLngs = null;
   allRows = [];
+  searchGen++;
+  crawlStop = true;
   searchBtn.disabled = true;
   exportBtn.disabled = true;
+  crawlBtn.disabled = true;
   statusText.textContent = 'Нарисуйте полигон на карте.';
   statsEl.style.display = 'none';
   resultsEl.innerHTML = '<div class="empty-state">Выберите тип бизнеса, нарисуйте полигон на карте и нажмите «Искать в полигоне».</div>';
@@ -458,6 +483,8 @@ function normalize(elements) {
       brand: t.brand || '',
       emails,
       email_types: emails.map(classifyEmail),
+      email_sources: emails.map(() => 'OSM'),
+      site_status: '',
       phones,
       website,
       telegram: t['contact:telegram'] || '',
@@ -496,11 +523,13 @@ function renderStats() {
   const withEmail = allRows.filter(r => r.emails.length).length;
   const withPhone = allRows.filter(r => r.phones.length).length;
   const withSite = allRows.filter(r => r.website).length;
+  const checked = allRows.filter(r => r.site_status).length;
   statsEl.innerHTML = `
     <span class="stat">Всего: <b>${total}</b></span>
     <span class="stat">С почтой: <b>${withEmail}</b></span>
     <span class="stat">С телефоном: <b>${withPhone}</b></span>
-    <span class="stat">С сайтом: <b>${withSite}</b></span>`;
+    <span class="stat">С сайтом: <b>${withSite}</b></span>
+    ${checked ? `<span class="stat">Сайтов проверено: <b>${checked}</b></span>` : ''}`;
   statsEl.style.display = total ? 'flex' : 'none';
 }
 
@@ -525,9 +554,16 @@ function renderResults() {
     }).addTo(resultMarkers);
     marker.bindPopup(`<b>${escapeHtml(r.name)}</b><br>${escapeHtml(r.category)}<br>${escapeHtml(r.address)}`);
 
-    const emailsHtml = r.emails.map((e, i) =>
-      `✉ <a href="mailto:${escapeHtml(e)}">${escapeHtml(e)}</a><span class="tag ${r.email_types[i] === 'общая' ? 'generic' : 'personal'}">${r.email_types[i]}</span><br>`
-    ).join('');
+    const emailsHtml = r.emails.map((e, i) => {
+      const src = r.email_sources[i];
+      const srcTag = src && src !== 'OSM'
+        ? `<a class="tag source" href="${escapeHtml(safeUrl(src))}" target="_blank" rel="noopener" title="${escapeHtml(src)}">с сайта</a>`
+        : '';
+      return `✉ <a href="mailto:${escapeHtml(e)}">${escapeHtml(e)}</a><span class="tag ${r.email_types[i] === 'общая' ? 'generic' : 'personal'}">${r.email_types[i]}</span>${srcTag}<br>`;
+    }).join('');
+    const siteStatusHtml = r.site_status && !(r.site_status === 'ok' && r.emails.length)
+      ? `<span class="site-status">${escapeHtml(r.site_status === 'ok' ? 'на сайте почта не найдена' : SITE_STATUS_LABELS[r.site_status] || r.site_status)}</span><br>`
+      : '';
     const phonesHtml = r.phones.map(p => `☎ <a href="tel:${escapeHtml(p.replace(/[^\d+]/g, ''))}">${escapeHtml(p)}</a><br>`).join('');
     const siteHtml = r.website ? `🌐 <a href="${escapeHtml(safeUrl(r.website))}" target="_blank" rel="noopener">${escapeHtml(r.website)}</a><br>` : '';
     const socials = [
@@ -546,6 +582,7 @@ function renderResults() {
         ${r.address ? escapeHtml(r.address) + '<br>' : ''}
         ${emailsHtml}${phonesHtml}${siteHtml}
         ${socials ? socials + '<br>' : ''}
+        ${siteStatusHtml}
       </div>`;
     item.addEventListener('click', (ev) => {
       if (ev.target.tagName === 'A') return;
@@ -555,8 +592,10 @@ function renderResults() {
     frag.appendChild(item);
   });
 
+  const scrollTop = resultsEl.scrollTop;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(frag);
+  resultsEl.scrollTop = scrollTop;
   exportBtn.disabled = false;
 }
 
@@ -612,8 +651,11 @@ searchBtn.addEventListener('click', async () => {
   const built = buildQuery(buildPolyString(currentPolygonLatLngs));
   if (built.error) { statusText.textContent = built.error; return; }
 
+  searchGen++;
+  crawlStop = true;
   searchBtn.disabled = true;
   exportBtn.disabled = true;
+  crawlBtn.disabled = true;
   statsEl.style.display = 'none';
   resultsEl.innerHTML = '';
 
@@ -627,6 +669,7 @@ searchBtn.addEventListener('click', async () => {
     statusText.textContent = `Результаты: ${typeLabel}`;
     renderStats();
     renderResults();
+    updateCrawlBtn();
   } catch (err) {
     allRows = [];
     statusText.textContent = 'Ошибка запроса: ' + err.message;
@@ -636,15 +679,128 @@ searchBtn.addEventListener('click', async () => {
   }
 });
 
+// ---------- Finding emails on websites (via backend) ----------
+function crawlCandidates() {
+  return allRows.filter(r => r.website && !r.emails.length && !r.site_status);
+}
+function updateCrawlBtn() {
+  if (crawlRunning) { crawlBtn.textContent = 'Остановить поиск почт'; crawlBtn.disabled = false; return; }
+  const n = crawlCandidates().length;
+  crawlBtn.textContent = n ? `Найти почты на сайтах (${n})` : 'Найти почты на сайтах';
+  crawlBtn.disabled = !n;
+}
+
+async function fetchWithTimeout(url, options, ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try { return await fetch(url, { ...options, signal: controller.signal }); }
+  finally { clearTimeout(timer); }
+}
+
+// Free Render instances sleep when idle; the first request wakes them up (can take ~1 min)
+async function wakeServer() {
+  for (let i = 0; i < 4; i++) {
+    if (crawlStop) return false;
+    try {
+      const r = await fetchWithTimeout(CRAWLER_API + '/health', {}, 25000);
+      if (r.ok) return true;
+    } catch (e) { /* retry */ }
+  }
+  return false;
+}
+
+function mergeCrawlResult(res) {
+  const row = allRows.find(r => r.id === res.id);
+  if (!row) return 0;
+  row.site_status = res.status || 'error';
+  let added = 0;
+  (res.emails || []).forEach(({ email, source }) => {
+    if (row.emails.includes(email)) return;
+    row.emails.push(email);
+    row.email_types.push(classifyEmail(email));
+    row.email_sources.push(source || 'сайт');
+    added++;
+  });
+  return added ? 1 : 0;
+}
+
+crawlBtn.addEventListener('click', async () => {
+  if (crawlRunning) { crawlStop = true; crawlBtn.disabled = true; crawlBtn.textContent = 'Останавливаю...'; return; }
+
+  const queue = crawlCandidates();
+  if (!queue.length) return;
+  const gen = searchGen;
+  crawlRunning = true;
+  crawlStop = false;
+  updateCrawlBtn();
+
+  statusText.innerHTML = '<span class="spinner"></span>Подключаюсь к серверу поиска почт (после простоя это может занять до минуты)...';
+  const awake = await wakeServer();
+  if (!awake) {
+    crawlRunning = false;
+    if (gen === searchGen) {
+      statusText.textContent = crawlStop ? 'Поиск почт остановлен.' : 'Сервер поиска почт не отвечает. Попробуйте ещё раз через минуту.';
+    }
+    crawlStop = false;
+    updateCrawlBtn();
+    return;
+  }
+
+  let done = 0, sitesWithNewEmails = 0, consecutiveErrors = 0;
+  for (let i = 0; i < queue.length; i += CRAWL_BATCH) {
+    if (crawlStop || gen !== searchGen) break;
+    const batch = queue.slice(i, i + CRAWL_BATCH);
+    statusText.innerHTML = `<span class="spinner"></span>Проверяю сайты: ${done} из ${queue.length}...`;
+    try {
+      const resp = await fetchWithTimeout(CRAWLER_API + '/api/find-emails', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sites: batch.map(r => ({ id: r.id, website: r.website })) })
+      }, 120000);
+      if (gen !== searchGen) break;
+      if (resp.status === 429) {
+        statusText.innerHTML = '<span class="spinner"></span>Сервер просит подождать, продолжу через 30 секунд...';
+        await sleep(30000);
+        i -= CRAWL_BATCH; // retry the same batch
+        continue;
+      }
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
+      data.results.forEach(res => { sitesWithNewEmails += mergeCrawlResult(res); });
+      consecutiveErrors = 0;
+    } catch (e) {
+      if (gen !== searchGen) break;
+      batch.forEach(r => { if (!r.site_status) r.site_status = 'error'; });
+      if (++consecutiveErrors >= 3) {
+        statusText.textContent = 'Сервер поиска почт перестал отвечать. Найденное сохранено, можно продолжить позже.';
+        break;
+      }
+    }
+    done += batch.length;
+    renderStats();
+    renderResults();
+  }
+
+  crawlRunning = false;
+  if (gen !== searchGen) { updateCrawlBtn(); return; }
+  if (consecutiveErrors < 3) {
+    statusText.textContent = crawlStop
+      ? `Поиск почт остановлен. Проверено сайтов: ${done}, почты найдены на ${sitesWithNewEmails}.`
+      : `Готово. Проверено сайтов: ${done}, почты найдены на ${sitesWithNewEmails}.`;
+  }
+  crawlStop = false;
+  updateCrawlBtn();
+});
+
 // ---------- CSV export (semicolon + BOM so Russian Excel opens it correctly) ----------
 exportBtn.addEventListener('click', () => {
   const rows = visibleRows();
   if (!rows.length) return;
   const columns = [
-    ['name', 'Название'], ['category', 'Категория'], ['emails', 'Почта'], ['email_types', 'Тип почты'],
+    ['name', 'Название'], ['category', 'Категория'], ['emails', 'Почта'], ['email_types', 'Тип почты'], ['email_sources', 'Источник почты'],
     ['phones', 'Телефон'], ['website', 'Сайт'], ['telegram', 'Telegram'], ['whatsapp', 'WhatsApp'],
     ['vk', 'VK'], ['instagram', 'Instagram'], ['address', 'Адрес'], ['opening_hours', 'Часы работы'],
-    ['lat', 'Широта'], ['lon', 'Долгота'], ['id', 'OSM ID']
+    ['site_status', 'Проверка сайта'], ['lat', 'Широта'], ['lon', 'Долгота'], ['id', 'OSM ID']
   ];
   const cell = (v) => `"${(Array.isArray(v) ? v.join(', ') : (v ?? '')).toString().replace(/"/g, '""')}"`;
   const lines = [columns.map(c => cell(c[1])).join(';')];

@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: car-rental-polygon-search
+    name: car-rental-search-api
     runtime: node
     buildCommand: npm install
     startCommand: npm start
