@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Car Rental Polygon Search</title>
+<title>Поиск бизнесов по полигону</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
 <style>
@@ -11,206 +11,107 @@
     --bg: #0f1115;
     --panel: #16191f;
     --panel-border: #262a33;
+    --input: #1d212a;
     --text: #e8eaed;
     --text-dim: #9aa0a8;
     --accent: #4f8cff;
     --accent-dim: #2c3e5f;
-    --danger: #ff5c5c;
+    --ok: #3ecf8e;
+    --warn: #e0a54a;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
   #app { display: flex; height: 100vh; }
   #map { flex: 1; height: 100%; }
   #sidebar {
-    width: 360px;
-    min-width: 360px;
+    width: 380px; min-width: 380px;
     background: var(--panel);
     border-left: 1px solid var(--panel-border);
-    display: flex;
-    flex-direction: column;
-    height: 100%;
+    display: flex; flex-direction: column; height: 100%;
   }
-  #header {
-    padding: 16px 18px;
-    border-bottom: 1px solid var(--panel-border);
-  }
-  #header-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 4px;
-  }
-  #header h1 {
-    font-size: 15px;
-    font-weight: 600;
-    margin: 0;
-  }
-  #helpBtn {
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    border-radius: 50%;
-    font-size: 13px;
-    font-weight: 700;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  #header p {
-    font-size: 12.5px;
-    color: var(--text-dim);
-    margin: 0;
-    line-height: 1.5;
-  }
-  #controls {
-    padding: 12px 18px;
-    border-bottom: 1px solid var(--panel-border);
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  button {
-    font-family: inherit;
-    font-size: 12.5px;
-    font-weight: 500;
-    padding: 8px 12px;
+  #header { padding: 16px 18px 12px; border-bottom: 1px solid var(--panel-border); }
+  #header-top { display: flex; align-items: center; justify-content: space-between; }
+  #header h1 { font-size: 15px; font-weight: 600; margin: 0; }
+  #helpBtn { width: 24px; height: 24px; padding: 0; border-radius: 50%; font-size: 13px; font-weight: 700; line-height: 1; flex-shrink: 0; }
+
+  #filters { padding: 12px 18px; border-bottom: 1px solid var(--panel-border); display: flex; flex-direction: column; gap: 10px; }
+  .field label { display: block; font-size: 11.5px; color: var(--text-dim); margin-bottom: 4px; }
+  select, input[type="text"] {
+    width: 100%;
+    font-family: inherit; font-size: 13px;
+    padding: 8px 10px;
     border-radius: 6px;
     border: 1px solid var(--panel-border);
-    background: #1d212a;
-    color: var(--text);
-    cursor: pointer;
-    transition: background 0.15s;
+    background: var(--input); color: var(--text);
+    outline: none;
+  }
+  select:focus, input[type="text"]:focus { border-color: var(--accent); }
+  .hint { font-size: 11px; color: var(--text-dim); margin-top: 4px; line-height: 1.4; }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; cursor: pointer; user-select: none; }
+  .checkbox-row input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+  .hidden-field { display: none; }
+
+  #controls { padding: 12px 18px; border-bottom: 1px solid var(--panel-border); display: flex; flex-wrap: wrap; gap: 8px; }
+  button {
+    font-family: inherit; font-size: 12.5px; font-weight: 500;
+    padding: 8px 12px; border-radius: 6px;
+    border: 1px solid var(--panel-border);
+    background: #1d212a; color: var(--text);
+    cursor: pointer; transition: background 0.15s;
   }
   button:hover { background: #262b35; }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
   button.primary { background: var(--accent); border-color: var(--accent); color: white; }
   button.primary:hover { background: #3d78e6; }
-  #status {
-    padding: 10px 18px;
-    font-size: 12.5px;
-    color: var(--text-dim);
-    border-bottom: 1px solid var(--panel-border);
-    min-height: 16px;
-  }
-  #results {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px 0;
-  }
-  .result-item {
-    padding: 12px 18px;
-    border-bottom: 1px solid var(--panel-border);
-    cursor: pointer;
-  }
+
+  #status { padding: 10px 18px; font-size: 12.5px; color: var(--text-dim); border-bottom: 1px solid var(--panel-border); min-height: 16px; line-height: 1.5; }
+  #stats { display: none; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .stat { font-size: 11.5px; padding: 3px 8px; border-radius: 10px; background: var(--input); color: var(--text-dim); }
+  .stat b { color: var(--text); }
+
+  #results { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .result-item { padding: 12px 18px; border-bottom: 1px solid var(--panel-border); cursor: pointer; }
   .result-item:hover { background: #1c2029; }
-  .result-name {
-    font-size: 13.5px;
-    font-weight: 600;
-    margin-bottom: 3px;
-  }
-  .result-detail {
-    font-size: 12px;
-    color: var(--text-dim);
-    line-height: 1.5;
-  }
+  .result-name { font-size: 13.5px; font-weight: 600; margin-bottom: 2px; }
+  .result-cat { font-size: 11.5px; color: var(--text-dim); margin-bottom: 4px; }
+  .result-detail { font-size: 12px; color: var(--text-dim); line-height: 1.6; word-break: break-word; }
   .result-detail a { color: var(--accent); text-decoration: none; }
-  .empty-state {
-    padding: 40px 24px;
-    text-align: center;
-    color: var(--text-dim);
-    font-size: 13px;
-    line-height: 1.6;
-  }
+  .tag { display: inline-block; font-size: 10.5px; padding: 1px 6px; border-radius: 8px; margin-left: 4px; vertical-align: 1px; }
+  .tag.generic { background: rgba(62,207,142,0.15); color: var(--ok); }
+  .tag.personal { background: rgba(224,165,74,0.15); color: var(--warn); }
+  .empty-state { padding: 36px 24px; text-align: center; color: var(--text-dim); font-size: 13px; line-height: 1.6; }
   .spinner {
-    width: 14px;
-    height: 14px;
-    border: 2px solid var(--accent-dim);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid var(--accent-dim); border-top-color: var(--accent);
+    border-radius: 50%; display: inline-block;
     animation: spin 0.7s linear infinite;
-    margin-right: 6px;
-    vertical-align: -2px;
+    margin-right: 6px; vertical-align: -2px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
   .leaflet-popup-content-wrapper { background: var(--panel); color: var(--text); }
   .leaflet-popup-tip { background: var(--panel); }
   .leaflet-container a.leaflet-popup-close-button { color: var(--text-dim); }
 
-  #onboardingOverlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 2000;
-    padding: 20px;
-  }
+  #onboardingOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 20px; }
   #onboardingOverlay.hidden { display: none; }
-  #onboardingModal {
-    background: var(--panel);
-    border: 1px solid var(--panel-border);
-    border-radius: 12px;
-    padding: 28px 26px 22px;
-    max-width: 420px;
-    width: 100%;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-  }
-  #onboardingModal h2 {
-    font-size: 17px;
-    margin: 0 0 20px 0;
-  }
-  .onboard-step {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 18px;
-  }
-  .onboard-num {
-    flex-shrink: 0;
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    background: var(--accent-dim);
-    color: var(--accent);
-    font-size: 13px;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .onboard-title {
-    font-size: 13.5px;
-    font-weight: 600;
-    margin-bottom: 3px;
-  }
-  .onboard-desc {
-    font-size: 12.5px;
-    color: var(--text-dim);
-    line-height: 1.5;
-  }
-  #onboardingClose {
-    width: 100%;
-    padding: 10px;
-    margin-top: 4px;
-    font-size: 13px;
-  }
+  #onboardingModal { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px; padding: 28px 26px 22px; max-width: 440px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto; }
+  #onboardingModal h2 { font-size: 17px; margin: 0 0 20px 0; }
+  .onboard-step { display: flex; gap: 12px; margin-bottom: 16px; }
+  .onboard-num { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-dim); color: var(--accent); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .onboard-title { font-size: 13.5px; font-weight: 600; margin-bottom: 3px; }
+  .onboard-desc { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
+  #onboardingClose { width: 100%; padding: 10px; margin-top: 4px; font-size: 13px; }
 
   @media (max-width: 700px) {
     #app { flex-direction: column; }
-    #map { height: 45vh; min-height: 260px; flex: none; }
-    #sidebar {
-      width: 100%;
-      min-width: 0;
-      flex: 1;
-      height: auto;
-      border-left: none;
-      border-top: 1px solid var(--panel-border);
-    }
-    #header { padding: 12px 14px; }
-    #controls { padding: 10px 14px; }
+    #map { height: 42vh; min-height: 250px; flex: none; }
+    #sidebar { width: 100%; min-width: 0; flex: 1; height: auto; border-left: none; border-top: 1px solid var(--panel-border); }
+    #app { height: auto; min-height: 100vh; }
+    #results { overflow-y: visible; }
+    #header, #filters, #controls, #status { padding-left: 14px; padding-right: 14px; }
     #controls button { flex: 1 1 auto; min-width: 100px; }
     .result-item { padding: 12px 14px; }
-    #onboardingModal { padding: 22px 18px 18px; max-width: 340px; }
+    #onboardingModal { padding: 22px 18px 18px; }
   }
 </style>
 </head>
@@ -220,19 +121,43 @@
   <div id="sidebar">
     <div id="header">
       <div id="header-top">
-        <h1>Car Rental — поиск по полигону</h1>
+        <h1>Поиск бизнесов по полигону</h1>
         <button id="helpBtn" title="Как пользоваться">?</button>
       </div>
-      <p>Нарисуйте область на карте (кнопка полигона слева сверху на карте). Поиск идёт по данным OpenStreetMap через Overpass API.</p>
     </div>
+
+    <div id="filters">
+      <div class="field">
+        <label for="typeSelect">Тип бизнеса</label>
+        <select id="typeSelect"></select>
+      </div>
+      <div class="field hidden-field" id="customTagField">
+        <label for="customTag">Свой тег OSM (ключ=значение)</label>
+        <input type="text" id="customTag" placeholder="например, craft=electrician">
+        <div class="hint">Несколько тегов — через запятую. Список тегов: wiki.openstreetmap.org/wiki/Map_features</div>
+      </div>
+      <div class="field">
+        <label for="nameKeyword">Слово в названии (необязательно)</label>
+        <input type="text" id="nameKeyword" placeholder="например, авто или hertz">
+      </div>
+      <label class="checkbox-row">
+        <input type="checkbox" id="onlyEmail"> Показывать только с почтой
+      </label>
+    </div>
+
     <div id="controls">
       <button class="primary" id="searchBtn" disabled>Искать в полигоне</button>
       <button id="clearBtn">Очистить</button>
-      <button id="exportBtn" disabled>Export CSV</button>
+      <button id="exportBtn" disabled>Экспорт CSV</button>
     </div>
-    <div id="status"></div>
+
+    <div id="status">
+      <span id="statusText">Нарисуйте полигон на карте.</span>
+      <div id="stats"></div>
+    </div>
+
     <div id="results">
-      <div class="empty-state">Нарисуйте полигон на карте и нажмите «Искать в полигоне»</div>
+      <div class="empty-state">Выберите тип бизнеса, нарисуйте полигон на карте и нажмите «Искать в полигоне».</div>
     </div>
   </div>
 </div>
@@ -242,23 +167,30 @@
     <h2>Как это работает</h2>
     <div class="onboard-step">
       <div class="onboard-num">1</div>
-      <div class="onboard-text">
-        <div class="onboard-title">Найдите значок полигона</div>
-        <div class="onboard-desc">Слева сверху на карте — три кнопки: приблизить, отдалить и нарисовать полигон (пятиугольник). Нажмите на пятиугольник.</div>
+      <div>
+        <div class="onboard-title">Выберите тип бизнеса</div>
+        <div class="onboard-desc">В списке справа: автосервисы, стоматологии, отели и т.д. Можно добавить слово, которое должно быть в названии.</div>
       </div>
     </div>
     <div class="onboard-step">
       <div class="onboard-num">2</div>
-      <div class="onboard-text">
-        <div class="onboard-title">Обведите нужную область</div>
-        <div class="onboard-desc">Кликайте по карте, чтобы поставить точки границы. Чтобы завершить фигуру — кликните на первую точку ещё раз или сделайте двойной клик.</div>
+      <div>
+        <div class="onboard-title">Нарисуйте область на карте</div>
+        <div class="onboard-desc">Нажмите значок пятиугольника слева сверху на карте, затем ставьте точки кликами. Чтобы замкнуть фигуру, кликните на первую точку.</div>
       </div>
     </div>
     <div class="onboard-step">
       <div class="onboard-num">3</div>
-      <div class="onboard-text">
+      <div>
         <div class="onboard-title">Нажмите «Искать в полигоне»</div>
-        <div class="onboard-desc">Кнопка появится активной справа. Поиск обычно занимает от пары секунд до минуты — зависит от размера области.</div>
+        <div class="onboard-desc">Поиск занимает от пары секунд до минуты. Тип бизнеса можно менять и искать заново без перерисовки области.</div>
+      </div>
+    </div>
+    <div class="onboard-step">
+      <div class="onboard-num">4</div>
+      <div>
+        <div class="onboard-title">Выгрузите контакты</div>
+        <div class="onboard-desc">Экспорт CSV открывается в Excel. Почты помечены: <span class="tag generic">общая</span> (info@, sales@) или <span class="tag personal">возможно личная</span>.</div>
       </div>
     </div>
     <button id="onboardingClose" class="primary">Понятно, начать</button>
@@ -268,35 +200,125 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script>
-const ONBOARDING_KEY = 'car_rental_onboarding_dismissed';
+// ---------- Business type presets (label -> OSM tags) ----------
+const BUSINESS_TYPES = [
+  { group: 'Авто', items: [
+    { id: 'car_rental', label: 'Прокат автомобилей', tags: [['amenity','car_rental'], ['shop','car_rental']] },
+    { id: 'car_repair', label: 'Автосервис', tags: [['shop','car_repair']] },
+    { id: 'car_wash', label: 'Автомойка', tags: [['amenity','car_wash']] },
+    { id: 'tyres', label: 'Шиномонтаж / шины', tags: [['shop','tyres']] },
+    { id: 'car_dealer', label: 'Автосалон', tags: [['shop','car']] },
+    { id: 'car_parts', label: 'Автозапчасти', tags: [['shop','car_parts']] },
+    { id: 'fuel', label: 'АЗС', tags: [['amenity','fuel']] }
+  ]},
+  { group: 'Еда и напитки', items: [
+    { id: 'restaurant', label: 'Ресторан', tags: [['amenity','restaurant']] },
+    { id: 'cafe', label: 'Кафе / кофейня', tags: [['amenity','cafe']] },
+    { id: 'bar', label: 'Бар / паб', tags: [['amenity','bar'], ['amenity','pub']] },
+    { id: 'fast_food', label: 'Фастфуд', tags: [['amenity','fast_food']] },
+    { id: 'bakery', label: 'Пекарня', tags: [['shop','bakery']] }
+  ]},
+  { group: 'Здоровье', items: [
+    { id: 'dentist', label: 'Стоматология', tags: [['amenity','dentist'], ['healthcare','dentist']] },
+    { id: 'clinic', label: 'Клиника / медцентр', tags: [['amenity','clinic'], ['healthcare','clinic']] },
+    { id: 'pharmacy', label: 'Аптека', tags: [['amenity','pharmacy']] },
+    { id: 'veterinary', label: 'Ветклиника', tags: [['amenity','veterinary']] },
+    { id: 'optician', label: 'Оптика', tags: [['shop','optician']] }
+  ]},
+  { group: 'Красота и спорт', items: [
+    { id: 'beauty', label: 'Салон красоты', tags: [['shop','beauty']] },
+    { id: 'hairdresser', label: 'Парикмахерская / барбершоп', tags: [['shop','hairdresser']] },
+    { id: 'fitness', label: 'Фитнес-клуб', tags: [['leisure','fitness_centre']] },
+    { id: 'massage', label: 'Массаж / SPA', tags: [['shop','massage'], ['leisure','spa']] }
+  ]},
+  { group: 'Жильё и туризм', items: [
+    { id: 'hotel', label: 'Отель', tags: [['tourism','hotel']] },
+    { id: 'hostel', label: 'Хостел', tags: [['tourism','hostel']] },
+    { id: 'guest_house', label: 'Гостевой дом', tags: [['tourism','guest_house']] },
+    { id: 'travel_agency', label: 'Турагентство', tags: [['shop','travel_agency'], ['office','travel_agent']] }
+  ]},
+  { group: 'Офисы и услуги', items: [
+    { id: 'lawyer', label: 'Юристы', tags: [['office','lawyer']] },
+    { id: 'accountant', label: 'Бухгалтерия', tags: [['office','accountant']] },
+    { id: 'estate_agent', label: 'Агентство недвижимости', tags: [['office','estate_agent']] },
+    { id: 'it', label: 'IT-компания', tags: [['office','it']] },
+    { id: 'insurance', label: 'Страхование', tags: [['office','insurance']] },
+    { id: 'logistics', label: 'Логистика / перевозки', tags: [['office','logistics'], ['office','moving_company']] }
+  ]},
+  { group: 'Торговля', items: [
+    { id: 'supermarket', label: 'Супермаркет', tags: [['shop','supermarket']] },
+    { id: 'hardware', label: 'Стройматериалы', tags: [['shop','doityourself'], ['shop','hardware']] },
+    { id: 'furniture', label: 'Мебель', tags: [['shop','furniture']] },
+    { id: 'electronics', label: 'Электроника', tags: [['shop','electronics'], ['shop','mobile_phone']] },
+    { id: 'clothes', label: 'Одежда', tags: [['shop','clothes']] },
+    { id: 'florist', label: 'Цветы', tags: [['shop','florist']] }
+  ]},
+  { group: 'Другое', items: [
+    { id: 'any_named', label: 'Любой бизнес (нужно слово в названии)', tags: 'ANY' },
+    { id: 'custom', label: 'Свой тег OSM…', tags: 'CUSTOM' }
+  ]}
+];
+
+const TYPE_BY_ID = {};
+BUSINESS_TYPES.forEach(g => g.items.forEach(i => { TYPE_BY_ID[i.id] = i; }));
+
+// Readable category label from tags, for mixed results (any/custom)
+const TAG_LABELS = {};
+BUSINESS_TYPES.forEach(g => g.items.forEach(i => {
+  if (Array.isArray(i.tags)) i.tags.forEach(([k, v]) => { TAG_LABELS[`${k}=${v}`] = i.label; });
+}));
+const BUSINESS_KEYS = ['amenity','shop','office','craft','tourism','leisure','healthcare'];
+
+// ---------- DOM ----------
+const typeSelect = document.getElementById('typeSelect');
+const customTagField = document.getElementById('customTagField');
+const customTagInput = document.getElementById('customTag');
+const nameKeywordInput = document.getElementById('nameKeyword');
+const onlyEmailCheckbox = document.getElementById('onlyEmail');
+const searchBtn = document.getElementById('searchBtn');
+const clearBtn = document.getElementById('clearBtn');
+const exportBtn = document.getElementById('exportBtn');
+const statusText = document.getElementById('statusText');
+const statsEl = document.getElementById('stats');
+const resultsEl = document.getElementById('results');
+
+BUSINESS_TYPES.forEach(g => {
+  const og = document.createElement('optgroup');
+  og.label = g.group;
+  g.items.forEach(i => {
+    const opt = document.createElement('option');
+    opt.value = i.id;
+    opt.textContent = i.label;
+    og.appendChild(opt);
+  });
+  typeSelect.appendChild(og);
+});
+typeSelect.value = 'car_rental';
+
+typeSelect.addEventListener('change', () => {
+  customTagField.classList.toggle('hidden-field', typeSelect.value !== 'custom');
+});
+
+// ---------- Onboarding ----------
+const ONBOARDING_KEY = 'biz_search_onboarding_v2';
 const onboardingOverlay = document.getElementById('onboardingOverlay');
 const onboardingClose = document.getElementById('onboardingClose');
 const helpBtn = document.getElementById('helpBtn');
 
-function showOnboarding() {
-  onboardingOverlay.classList.remove('hidden');
-}
+function showOnboarding() { onboardingOverlay.classList.remove('hidden'); }
 function hideOnboarding() {
   onboardingOverlay.classList.add('hidden');
-  try { localStorage.setItem(ONBOARDING_KEY, '1'); } catch (e) { /* ignore storage errors */ }
+  try { localStorage.setItem(ONBOARDING_KEY, '1'); } catch (e) {}
 }
-
 let onboardingSeen = false;
-try { onboardingSeen = localStorage.getItem(ONBOARDING_KEY) === '1'; } catch (e) { /* ignore storage errors */ }
-if (!onboardingSeen) {
-  showOnboarding();
-} else {
-  onboardingOverlay.classList.add('hidden');
-}
-
+try { onboardingSeen = localStorage.getItem(ONBOARDING_KEY) === '1'; } catch (e) {}
+if (onboardingSeen) onboardingOverlay.classList.add('hidden');
 onboardingClose.addEventListener('click', hideOnboarding);
 helpBtn.addEventListener('click', showOnboarding);
-onboardingOverlay.addEventListener('click', (e) => {
-  if (e.target === onboardingOverlay) hideOnboarding();
-});
+onboardingOverlay.addEventListener('click', (e) => { if (e.target === onboardingOverlay) hideOnboarding(); });
 
-const map = L.map('map', { zoomControl: true }).setView([52.5, 13.4], 5);
-
+// ---------- Map ----------
+const map = L.map('map', { zoomControl: true }).setView([52, 60], 4);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap contributors',
   maxZoom: 19
@@ -304,158 +326,261 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 const drawnItems = new L.FeatureGroup();
 map.addLayer(drawnItems);
-
-const drawControl = new L.Control.Draw({
+map.addControl(new L.Control.Draw({
   draw: {
     polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: '#4f8cff' } },
-    polyline: false,
-    rectangle: false,
-    circle: false,
-    marker: false,
-    circlemarker: false
+    polyline: false, rectangle: false, circle: false, marker: false, circlemarker: false
   },
   edit: { featureGroup: drawnItems, remove: false }
-});
-map.addControl(drawControl);
-
-const searchBtn = document.getElementById('searchBtn');
-const clearBtn = document.getElementById('clearBtn');
-const exportBtn = document.getElementById('exportBtn');
-const statusEl = document.getElementById('status');
-const resultsEl = document.getElementById('results');
+}));
 
 let currentPolygonLatLngs = null;
-let resultMarkers = L.layerGroup().addTo(map);
-let lastRows = [];
+const resultMarkers = L.layerGroup().addTo(map);
+let allRows = [];
 
 map.on(L.Draw.Event.CREATED, (e) => {
   drawnItems.clearLayers();
-  const layer = e.layer;
-  drawnItems.addLayer(layer);
-  currentPolygonLatLngs = layer.getLatLngs()[0];
+  drawnItems.addLayer(e.layer);
+  currentPolygonLatLngs = e.layer.getLatLngs()[0];
   searchBtn.disabled = false;
+  statusText.textContent = 'Область выбрана. Нажмите «Искать в полигоне».';
 });
-
 map.on(L.Draw.Event.EDITED, (e) => {
-  e.layers.eachLayer((layer) => {
-    currentPolygonLatLngs = layer.getLatLngs()[0];
-  });
+  e.layers.eachLayer((layer) => { currentPolygonLatLngs = layer.getLatLngs()[0]; });
 });
 
 clearBtn.addEventListener('click', () => {
   drawnItems.clearLayers();
   resultMarkers.clearLayers();
   currentPolygonLatLngs = null;
+  allRows = [];
   searchBtn.disabled = true;
   exportBtn.disabled = true;
-  lastRows = [];
-  statusEl.textContent = '';
-  resultsEl.innerHTML = '<div class="empty-state">Нарисуйте полигон на карте и нажмите «Искать в полигоне»</div>';
+  statusText.textContent = 'Нарисуйте полигон на карте.';
+  statsEl.style.display = 'none';
+  resultsEl.innerHTML = '<div class="empty-state">Выберите тип бизнеса, нарисуйте полигон на карте и нажмите «Искать в полигоне».</div>';
 });
 
+onlyEmailCheckbox.addEventListener('change', () => { if (allRows.length) renderResults(); });
+
+// ---------- Query building ----------
 function buildPolyString(latlngs) {
-  // Overpass poly filter format: "lat1 lon1 lat2 lon2 ..."
   return latlngs.map(p => `${p.lat.toFixed(6)} ${p.lng.toFixed(6)}`).join(' ');
 }
 
+function escapeOverpassString(s) {
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function parseCustomTags(input) {
+  return input.split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(pair => {
+      const idx = pair.indexOf('=');
+      if (idx <= 0) return null;
+      const k = pair.slice(0, idx).trim();
+      const v = pair.slice(idx + 1).trim();
+      return k ? [k, v] : null;
+    })
+    .filter(Boolean);
+}
+
+// Returns { query } or { error }
 function buildQuery(polyStr) {
-  return `
-[out:json][timeout:90];
-(
-  node["amenity"="car_rental"](poly:"${polyStr}");
-  way["amenity"="car_rental"](poly:"${polyStr}");
-  relation["amenity"="car_rental"](poly:"${polyStr}");
-  node["shop"="car_rental"](poly:"${polyStr}");
-  way["shop"="car_rental"](poly:"${polyStr}");
-);
-out center tags;
-`;
+  const type = TYPE_BY_ID[typeSelect.value];
+  const keyword = nameKeywordInput.value.trim();
+  const nameFilter = keyword ? `["name"~"${escapeOverpassString(escapeRegex(keyword))}",i]` : '';
+  const area = `(poly:"${polyStr}")`;
+  const lines = [];
+
+  if (type.tags === 'ANY') {
+    if (!keyword) return { error: 'Для режима «Любой бизнес» укажите слово в названии.' };
+    BUSINESS_KEYS.forEach(k => lines.push(`  nwr["${k}"]${nameFilter}${area};`));
+  } else {
+    let tags = type.tags;
+    if (tags === 'CUSTOM') {
+      tags = parseCustomTags(customTagInput.value);
+      if (!tags.length) return { error: 'Укажите тег в формате ключ=значение, например craft=electrician.' };
+    }
+    tags.forEach(([k, v]) => {
+      const tagFilter = v === '*' || v === ''
+        ? `["${escapeOverpassString(k)}"]`
+        : `["${escapeOverpassString(k)}"="${escapeOverpassString(v)}"]`;
+      lines.push(`  nwr${tagFilter}${nameFilter}${area};`);
+    });
+  }
+  return { query: `[out:json][timeout:90];\n(\n${lines.join('\n')}\n);\nout center tags;` };
+}
+
+// ---------- Normalization ----------
+const GENERIC_EMAIL_PREFIXES = ['info','office','sales','contact','contacts','hello','mail','admin','support','reception','order','orders','zakaz','booking','reservation','rent','service','manager','team','post','secretary','priemnaya','hr','job','client','clients','help','kontakt'];
+
+function splitMulti(value) {
+  return (value || '').split(/[;,]/).map(s => s.trim()).filter(Boolean);
+}
+function unique(arr) { return [...new Set(arr)]; }
+
+function classifyEmail(email) {
+  const local = email.split('@')[0].toLowerCase();
+  return GENERIC_EMAIL_PREFIXES.some(p => local === p || local.startsWith(p + '.') || local.startsWith(p + '-') || local.startsWith(p + '_') || /^info\d*$/.test(local))
+    ? 'общая' : 'возможно личная';
+}
+
+function categoryOf(tags) {
+  for (const k of BUSINESS_KEYS) {
+    if (tags[k]) {
+      const label = TAG_LABELS[`${k}=${tags[k]}`];
+      return label || `${k}=${tags[k]}`;
+    }
+  }
+  return '';
 }
 
 function normalize(elements) {
+  const seen = new Set();
   return elements.map(el => {
-    const tags = el.tags || {};
-    const lat = el.lat || (el.center && el.center.lat);
-    const lon = el.lon || (el.center && el.center.lon);
-    const addrParts = [tags['addr:street'], tags['addr:housenumber'], tags['addr:city']].filter(Boolean);
+    const t = el.tags || {};
+    const lat = el.lat ?? (el.center && el.center.lat);
+    const lon = el.lon ?? (el.center && el.center.lon);
+    const emails = unique([...splitMulti(t.email), ...splitMulti(t['contact:email'])].map(e => e.replace(/^mailto:/i, '').toLowerCase()))
+      .filter(e => e.includes('@'));
+    const phones = unique([...splitMulti(t.phone), ...splitMulti(t['contact:phone']), ...splitMulti(t['contact:mobile'])]);
+    const website = t.website || t['contact:website'] || t.url || '';
+    const addrParts = [t['addr:city'], t['addr:street'], t['addr:housenumber']].filter(Boolean);
     return {
       id: `${el.type}/${el.id}`,
-      name: tags.name || '(без названия)',
-      brand: tags.brand || '',
-      phone: tags.phone || tags['contact:phone'] || '',
-      website: tags.website || tags['contact:website'] || '',
+      name: t.name || t.brand || '(без названия)',
+      category: categoryOf(t),
+      brand: t.brand || '',
+      emails,
+      email_types: emails.map(classifyEmail),
+      phones,
+      website,
+      telegram: t['contact:telegram'] || '',
+      vk: t['contact:vk'] || '',
+      whatsapp: t['contact:whatsapp'] || '',
+      instagram: t['contact:instagram'] || '',
       address: addrParts.join(', '),
-      opening_hours: tags.opening_hours || '',
+      opening_hours: t.opening_hours || '',
       lat, lon
     };
-  }).filter(r => r.lat && r.lon);
+  }).filter(r => {
+    if (!r.lat || !r.lon || seen.has(r.id)) return false;
+    seen.add(r.id);
+    return true;
+  });
 }
 
-function renderResults(rows) {
+// ---------- Rendering ----------
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
+}
+function safeUrl(url) {
+  if (!url) return '';
+  const u = /^https?:\/\//i.test(url) ? url : 'https://' + url;
+  return u.replace(/"/g, '%22');
+}
+
+function visibleRows() {
+  return onlyEmailCheckbox.checked ? allRows.filter(r => r.emails.length) : allRows;
+}
+
+function renderStats() {
+  const total = allRows.length;
+  const withEmail = allRows.filter(r => r.emails.length).length;
+  const withPhone = allRows.filter(r => r.phones.length).length;
+  const withSite = allRows.filter(r => r.website).length;
+  statsEl.innerHTML = `
+    <span class="stat">Всего: <b>${total}</b></span>
+    <span class="stat">С почтой: <b>${withEmail}</b></span>
+    <span class="stat">С телефоном: <b>${withPhone}</b></span>
+    <span class="stat">С сайтом: <b>${withSite}</b></span>`;
+  statsEl.style.display = total ? 'flex' : 'none';
+}
+
+function renderResults() {
   resultMarkers.clearLayers();
+  const rows = visibleRows();
+
   if (rows.length === 0) {
-    resultsEl.innerHTML = '<div class="empty-state">В этом полигоне car rental не найдены (по данным OSM). Попробуйте расширить область.</div>';
+    resultsEl.innerHTML = allRows.length
+      ? '<div class="empty-state">Ни у одного найденного объекта нет почты в OSM. Снимите галочку «только с почтой», чтобы увидеть телефоны и сайты.</div>'
+      : '<div class="empty-state">В этой области ничего не найдено по данным OSM. Попробуйте расширить область или выбрать другой тип.</div>';
     exportBtn.disabled = true;
     return;
   }
 
-  resultsEl.innerHTML = '';
-  rows.forEach((r, idx) => {
-    const marker = L.marker([r.lat, r.lon]).addTo(resultMarkers);
-    marker.bindPopup(`<b>${escapeHtml(r.name)}</b><br>${escapeHtml(r.address || '')}`);
+  const frag = document.createDocumentFragment();
+  rows.forEach(r => {
+    const marker = L.circleMarker([r.lat, r.lon], {
+      radius: 6, weight: 2,
+      color: r.emails.length ? '#3ecf8e' : '#4f8cff',
+      fillOpacity: 0.7
+    }).addTo(resultMarkers);
+    marker.bindPopup(`<b>${escapeHtml(r.name)}</b><br>${escapeHtml(r.category)}<br>${escapeHtml(r.address)}`);
+
+    const emailsHtml = r.emails.map((e, i) =>
+      `✉ <a href="mailto:${escapeHtml(e)}">${escapeHtml(e)}</a><span class="tag ${r.email_types[i] === 'общая' ? 'generic' : 'personal'}">${r.email_types[i]}</span><br>`
+    ).join('');
+    const phonesHtml = r.phones.map(p => `☎ <a href="tel:${escapeHtml(p.replace(/[^\d+]/g, ''))}">${escapeHtml(p)}</a><br>`).join('');
+    const siteHtml = r.website ? `🌐 <a href="${escapeHtml(safeUrl(r.website))}" target="_blank" rel="noopener">${escapeHtml(r.website)}</a><br>` : '';
+    const socials = [
+      r.telegram && `Telegram: ${escapeHtml(r.telegram)}`,
+      r.whatsapp && `WhatsApp: ${escapeHtml(r.whatsapp)}`,
+      r.vk && `VK: ${escapeHtml(r.vk)}`,
+      r.instagram && `Instagram: ${escapeHtml(r.instagram)}`
+    ].filter(Boolean).join(' · ');
 
     const item = document.createElement('div');
     item.className = 'result-item';
     item.innerHTML = `
       <div class="result-name">${escapeHtml(r.name)}</div>
+      ${r.category ? `<div class="result-cat">${escapeHtml(r.category)}</div>` : ''}
       <div class="result-detail">
         ${r.address ? escapeHtml(r.address) + '<br>' : ''}
-        ${r.phone ? '☎ ' + escapeHtml(r.phone) + '<br>' : ''}
-        ${r.website ? `<a href="${escapeHtml(r.website)}" target="_blank" rel="noopener">${escapeHtml(r.website)}</a>` : ''}
-      </div>
-    `;
-    item.addEventListener('click', () => {
+        ${emailsHtml}${phonesHtml}${siteHtml}
+        ${socials ? socials + '<br>' : ''}
+      </div>`;
+    item.addEventListener('click', (ev) => {
+      if (ev.target.tagName === 'A') return;
       map.setView([r.lat, r.lon], 16);
       marker.openPopup();
     });
-    resultsEl.appendChild(item);
+    frag.appendChild(item);
   });
 
+  resultsEl.innerHTML = '';
+  resultsEl.appendChild(frag);
   exportBtn.disabled = false;
 }
 
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
+// ---------- Overpass fetching ----------
 const OVERPASS_MIRRORS = [
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
   'https://lz4.overpass-api.de/api/interpreter',
   'https://z.overpass-api.de/api/interpreter'
 ];
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function tryMirror(url, query, timeoutMs) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const resp = await fetch(url, {
+    return await fetch(url, {
       method: 'POST',
       body: 'data=' + encodeURIComponent(query),
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       signal: controller.signal
     });
+  } finally {
     clearTimeout(timeoutId);
-    return resp;
-  } catch (err) {
-    clearTimeout(timeoutId);
-    throw err;
   }
 }
 
@@ -465,66 +590,71 @@ async function fetchViaMirrors(query, onAttempt) {
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         onAttempt(url, attempt);
-        const resp = await tryMirror(url, query, 15000);
+        const resp = await tryMirror(url, query, 30000);
         if (resp.status === 429) {
-          errors.push(`${url} -> HTTP 429 (attempt ${attempt})`);
+          errors.push(`${new URL(url).hostname}: 429`);
           if (attempt === 1) { await sleep(3000); continue; }
           break;
         }
-        if (!resp.ok) {
-          errors.push(`${url} -> HTTP ${resp.status}`);
-          break;
-        }
+        if (!resp.ok) { errors.push(`${new URL(url).hostname}: HTTP ${resp.status}`); break; }
         return await resp.json();
       } catch (err) {
-        errors.push(err.name === 'AbortError' ? `${url} -> timeout` : `${url} -> ${err.message}`);
+        errors.push(`${new URL(url).hostname}: ${err.name === 'AbortError' ? 'таймаут' : err.message}`);
         break;
       }
     }
   }
-  throw new Error('Все зеркала недоступны: ' + errors.join(' | '));
+  throw new Error('все зеркала недоступны (' + errors.join('; ') + ')');
 }
 
 searchBtn.addEventListener('click', async () => {
   if (!currentPolygonLatLngs) return;
+  const built = buildQuery(buildPolyString(currentPolygonLatLngs));
+  if (built.error) { statusText.textContent = built.error; return; }
+
   searchBtn.disabled = true;
+  exportBtn.disabled = true;
+  statsEl.style.display = 'none';
   resultsEl.innerHTML = '';
 
   try {
-    const polyStr = buildPolyString(currentPolygonLatLngs);
-    const query = buildQuery(polyStr);
-    const data = await fetchViaMirrors(query, (url, attempt) => {
+    const data = await fetchViaMirrors(built.query, (url, attempt) => {
       const suffix = attempt > 1 ? ` (попытка ${attempt})` : '';
-      statusEl.innerHTML = `<span class="spinner"></span>Запрашиваю ${new URL(url).hostname}${suffix}...`;
+      statusText.innerHTML = `<span class="spinner"></span>Запрашиваю ${new URL(url).hostname}${suffix}...`;
     });
-    const rows = normalize(data.elements || []);
-    lastRows = rows;
-    statusEl.textContent = `Найдено объектов: ${rows.length}`;
-    renderResults(rows);
+    allRows = normalize(data.elements || []);
+    const typeLabel = TYPE_BY_ID[typeSelect.value].label;
+    statusText.textContent = `Результаты: ${typeLabel}`;
+    renderStats();
+    renderResults();
   } catch (err) {
-    statusEl.textContent = 'Ошибка запроса: ' + err.message;
-    resultsEl.innerHTML = '<div class="empty-state">Не удалось получить данные ни с одного зеркала. Попробуйте ещё раз через минуту.</div>';
+    allRows = [];
+    statusText.textContent = 'Ошибка запроса: ' + err.message;
+    resultsEl.innerHTML = '<div class="empty-state">Не удалось получить данные. Попробуйте ещё раз через минуту или уменьшите область.</div>';
   } finally {
     searchBtn.disabled = false;
   }
 });
 
+// ---------- CSV export (semicolon + BOM so Russian Excel opens it correctly) ----------
 exportBtn.addEventListener('click', () => {
-  if (lastRows.length === 0) return;
-  const headers = ['id', 'name', 'brand', 'phone', 'website', 'address', 'opening_hours', 'lat', 'lon'];
-  const csvLines = [headers.join(',')];
-  lastRows.forEach(r => {
-    const line = headers.map(h => {
-      const val = (r[h] ?? '').toString().replace(/"/g, '""');
-      return `"${val}"`;
-    }).join(',');
-    csvLines.push(line);
-  });
-  const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const rows = visibleRows();
+  if (!rows.length) return;
+  const columns = [
+    ['name', 'Название'], ['category', 'Категория'], ['emails', 'Почта'], ['email_types', 'Тип почты'],
+    ['phones', 'Телефон'], ['website', 'Сайт'], ['telegram', 'Telegram'], ['whatsapp', 'WhatsApp'],
+    ['vk', 'VK'], ['instagram', 'Instagram'], ['address', 'Адрес'], ['opening_hours', 'Часы работы'],
+    ['lat', 'Широта'], ['lon', 'Долгота'], ['id', 'OSM ID']
+  ];
+  const cell = (v) => `"${(Array.isArray(v) ? v.join(', ') : (v ?? '')).toString().replace(/"/g, '""')}"`;
+  const lines = [columns.map(c => cell(c[1])).join(';')];
+  rows.forEach(r => lines.push(columns.map(c => cell(r[c[0]])).join(';')));
+
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'car_rentals_polygon.csv';
+  a.download = `${typeSelect.value}_${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 });
