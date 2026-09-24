@@ -104,6 +104,47 @@
   .onboard-desc { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
   #onboardingClose { width: 100%; padding: 10px; margin-top: 4px; font-size: 13px; }
 
+  .tag.sent { background: rgba(62,207,142,0.15); color: var(--ok); }
+  .tag.stop { background: rgba(255,92,92,0.15); color: #ff7a7a; }
+
+  /* ---------- Letters panel ---------- */
+  #mailOverlay { position: fixed; inset: 0; background: var(--bg); z-index: 1500; display: flex; flex-direction: column; }
+  #mailOverlay.hidden { display: none; }
+  #mailTop { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--panel-border); background: var(--panel); }
+  #mailTop h2 { font-size: 15px; margin: 0; }
+  #mailBody { flex: 1; display: flex; min-height: 0; }
+  #mailEditor { width: 400px; min-width: 400px; border-right: 1px solid var(--panel-border); background: var(--panel); padding: 14px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+  #mailEditor textarea, .mail-card textarea { width: 100%; font-family: inherit; font-size: 13px; line-height: 1.5; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--panel-border); background: var(--input); color: var(--text); resize: vertical; outline: none; }
+  #mailEditor textarea:focus, .mail-card textarea:focus { border-color: var(--accent); }
+  #tplBody { min-height: 260px; }
+  .var-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .var-chip { font-size: 11.5px; padding: 4px 8px; border-radius: 10px; }
+  .note { font-size: 11.5px; color: var(--text-dim); line-height: 1.5; }
+  .note b { color: var(--text); }
+  #mailList { flex: 1; overflow-y: auto; padding: 14px 18px; }
+  #mailCounters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .mail-card { border: 1px solid var(--panel-border); background: var(--panel); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+  .mail-card.is-sent { opacity: 0.6; }
+  .mail-card-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .mail-card-head b { font-size: 13.5px; }
+  .mail-card-head span { font-size: 11.5px; color: var(--text-dim); }
+  .mail-card .row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+  .mail-card .row label { font-size: 11.5px; color: var(--text-dim); min-width: 44px; }
+  .mail-card textarea { min-height: 150px; }
+  .mail-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .mail-actions button { font-size: 12px; padding: 6px 10px; }
+  .mail-warn { font-size: 11.5px; color: var(--warn); margin-top: 6px; }
+  #stopList { font-size: 12px; color: var(--text-dim); }
+  #stopList .stop-item { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; }
+  #stopList .stop-item button { font-size: 11px; padding: 2px 8px; }
+
+  @media (max-width: 700px) {
+    #mailBody { flex-direction: column; overflow-y: auto; }
+    #mailEditor { width: 100%; min-width: 0; border-right: none; border-bottom: 1px solid var(--panel-border); overflow-y: visible; }
+    #mailList { overflow-y: visible; padding: 12px 14px; }
+    #mailTop { padding: 10px 14px; }
+  }
+
   @media (max-width: 700px) {
     #app { flex-direction: column; }
     #map { height: 42vh; min-height: 250px; flex: none; }
@@ -151,6 +192,7 @@
       <button class="primary" id="searchBtn" disabled>Искать в полигоне</button>
       <button id="clearBtn">Очистить</button>
       <button id="crawlBtn" disabled title="Сервер откроет сайты найденных бизнесов и поищет на них почты">Найти почты на сайтах</button>
+      <button id="mailBtn" disabled title="Подготовить персональные письма найденным компаниям">Письма</button>
       <button id="exportBtn" disabled>Экспорт CSV</button>
     </div>
 
@@ -162,6 +204,48 @@
     <div id="results">
       <div class="empty-state">Выберите тип бизнеса, нарисуйте полигон на карте и нажмите «Искать в полигоне».</div>
     </div>
+  </div>
+</div>
+
+<div id="mailOverlay" class="hidden">
+  <div id="mailTop">
+    <h2>Письма</h2>
+    <button id="mailClose">← Назад к карте</button>
+  </div>
+  <div id="mailBody">
+    <div id="mailEditor">
+      <div class="note">Напишите шаблон один раз, для каждой компании он заполнится автоматически. Перед отправкой письмо можно поправить под конкретного получателя. Отправляете вы сами из своей почты, по одному письму.</div>
+      <div class="field">
+        <label for="tplSubject">Тема</label>
+        <input type="text" id="tplSubject">
+      </div>
+      <div class="field">
+        <label for="tplBody">Текст письма</label>
+        <textarea id="tplBody"></textarea>
+      </div>
+      <div class="field">
+        <label>Вставить в текст (кликните)</label>
+        <div class="var-chips" id="varChips"></div>
+        <div class="hint">Поля в [квадратных скобках] нужно заменить своим текстом, иначе письмо не откроется для отправки.</div>
+      </div>
+      <button id="tplReset">Вернуть шаблон по умолчанию</button>
+      <div class="field">
+        <label for="mailerSelect">Чем открывать письмо</label>
+        <select id="mailerSelect">
+          <option value="mailto">Почтовое приложение на компьютере</option>
+          <option value="gmail">Gmail в браузере</option>
+          <option value="yandex">Яндекс Почта в браузере</option>
+        </select>
+      </div>
+      <label class="checkbox-row"><input type="checkbox" id="genericOnly" checked> Только общие адреса (info@, sales@...)</label>
+      <label class="checkbox-row"><input type="checkbox" id="hideSent" checked> Скрыть уже отправленные</label>
+      <div class="note">Общие адреса компаний безопаснее с точки зрения закона о персональных данных. Отметки «отправлено» и стоп-лист хранятся только в этом браузере.</div>
+      <details>
+        <summary class="note" style="cursor:pointer">Стоп-лист (<span id="stopCount">0</span>)</summary>
+        <div id="stopList"></div>
+      </details>
+    </div>
+    <div id="mailList"></div>
   </div>
 </div>
 
@@ -199,8 +283,8 @@
     <div class="onboard-step">
       <div class="onboard-num">5</div>
       <div>
-        <div class="onboard-title">Выгрузите контакты</div>
-        <div class="onboard-desc">Экспорт CSV открывается в Excel. Почты помечены: <span class="tag generic">общая</span> (info@, sales@) или <span class="tag personal">возможно личная</span>.</div>
+        <div class="onboard-title">Подготовьте письма или выгрузите контакты</div>
+        <div class="onboard-desc">Кнопка «Письма» заполнит ваш шаблон для каждой компании, а отправите вы сами из своей почты. Экспорт CSV открывается в Excel. Почты помечены: <span class="tag generic">общая</span> (info@, sales@) или <span class="tag personal">возможно личная</span>.</div>
       </div>
     </div>
     <button id="onboardingClose" class="primary">Понятно, начать</button>
@@ -322,7 +406,7 @@ typeSelect.addEventListener('change', () => {
 });
 
 // ---------- Onboarding ----------
-const ONBOARDING_KEY = 'biz_search_onboarding_v3';
+const ONBOARDING_KEY = 'biz_search_onboarding_v4';
 const onboardingOverlay = document.getElementById('onboardingOverlay');
 const onboardingClose = document.getElementById('onboardingClose');
 const helpBtn = document.getElementById('helpBtn');
@@ -378,6 +462,9 @@ clearBtn.addEventListener('click', () => {
   allRows = [];
   searchGen++;
   crawlStop = true;
+  drafts = new Map();
+  mailBtn.disabled = true;
+  mailBtn.textContent = 'Письма';
   searchBtn.disabled = true;
   exportBtn.disabled = true;
   crawlBtn.disabled = true;
@@ -492,6 +579,7 @@ function normalize(elements) {
       whatsapp: t['contact:whatsapp'] || '',
       instagram: t['contact:instagram'] || '',
       address: addrParts.join(', '),
+      city: t['addr:city'] || '',
       opening_hours: t.opening_hours || '',
       lat, lon
     };
@@ -559,7 +647,9 @@ function renderResults() {
       const srcTag = src && src !== 'OSM'
         ? `<a class="tag source" href="${escapeHtml(safeUrl(src))}" target="_blank" rel="noopener" title="${escapeHtml(src)}">с сайта</a>`
         : '';
-      return `✉ <a href="mailto:${escapeHtml(e)}">${escapeHtml(e)}</a><span class="tag ${r.email_types[i] === 'общая' ? 'generic' : 'personal'}">${r.email_types[i]}</span>${srcTag}<br>`;
+      const log = contactLog[e];
+      const logTag = log ? (log.status === 'sent' ? '<span class="tag sent">отправлено</span>' : '<span class="tag stop">стоп-лист</span>') : '';
+      return `✉ <a href="mailto:${escapeHtml(e)}">${escapeHtml(e)}</a><span class="tag ${r.email_types[i] === 'общая' ? 'generic' : 'personal'}">${r.email_types[i]}</span>${srcTag}${logTag}<br>`;
     }).join('');
     const siteStatusHtml = r.site_status && !(r.site_status === 'ok' && r.emails.length)
       ? `<span class="site-status">${escapeHtml(r.site_status === 'ok' ? 'на сайте почта не найдена' : SITE_STATUS_LABELS[r.site_status] || r.site_status)}</span><br>`
@@ -597,6 +687,7 @@ function renderResults() {
   resultsEl.appendChild(frag);
   resultsEl.scrollTop = scrollTop;
   exportBtn.disabled = false;
+  updateMailBtn();
 }
 
 // ---------- Overpass fetching ----------
@@ -653,9 +744,11 @@ searchBtn.addEventListener('click', async () => {
 
   searchGen++;
   crawlStop = true;
+  drafts = new Map();
   searchBtn.disabled = true;
   exportBtn.disabled = true;
   crawlBtn.disabled = true;
+  mailBtn.disabled = true;
   statsEl.style.display = 'none';
   resultsEl.innerHTML = '';
 
@@ -686,7 +779,19 @@ function crawlCandidates() {
 function updateCrawlBtn() {
   if (crawlRunning) { crawlBtn.textContent = 'Остановить поиск почт'; crawlBtn.disabled = false; return; }
   const n = crawlCandidates().length;
-  crawlBtn.textContent = n ? `Найти почты на сайтах (${n})` : 'Найти почты на сайтах';
+  if (n) {
+    crawlBtn.textContent = `Найти почты на сайтах (${n})`;
+    crawlBtn.title = 'Сервер откроет сайты найденных бизнесов и поищет на них почты';
+  } else if (allRows.length) {
+    const checked = allRows.some(r => r.site_status);
+    crawlBtn.textContent = checked ? 'Все сайты проверены' : 'Нет сайтов для проверки';
+    crawlBtn.title = checked
+      ? 'Сайты всех найденных объектов без почты уже проверены'
+      : 'У найденных объектов без почты не указан сайт в OSM, проверять нечего';
+  } else {
+    crawlBtn.textContent = 'Найти почты на сайтах';
+    crawlBtn.title = 'Сначала выполните поиск в полигоне';
+  }
   crawlBtn.disabled = !n;
 }
 
@@ -792,6 +897,305 @@ crawlBtn.addEventListener('click', async () => {
   updateCrawlBtn();
 });
 
+// ---------- Letters ----------
+const mailBtn = document.getElementById('mailBtn');
+const mailOverlay = document.getElementById('mailOverlay');
+const mailClose = document.getElementById('mailClose');
+const tplSubject = document.getElementById('tplSubject');
+const tplBody = document.getElementById('tplBody');
+const tplReset = document.getElementById('tplReset');
+const varChips = document.getElementById('varChips');
+const mailerSelect = document.getElementById('mailerSelect');
+const genericOnly = document.getElementById('genericOnly');
+const hideSent = document.getElementById('hideSent');
+const mailList = document.getElementById('mailList');
+const stopCountEl = document.getElementById('stopCount');
+const stopListEl = document.getElementById('stopList');
+
+const LOG_KEY = 'grc_contact_log_v1';
+const TPL_KEY = 'grc_template_v1';
+const MAILER_KEY = 'grc_mailer_v1';
+const PAGE_SIZE = 20;
+
+function loadJSON(key, def) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch (e) { return def; } }
+function saveJSON(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {} }
+
+const DEFAULT_TEMPLATE = {
+  subject: 'Предложение для {название}',
+  body: `Здравствуйте!
+
+Меня зовут [ваше имя], я представляю [ваша компания]. Увидел {название} ({адрес}) и хочу предложить [суть предложения].
+
+[Почему это полезно именно им: 1–2 предложения]
+
+Если вам это неинтересно, просто ответьте «нет», и я больше не буду писать.
+
+С уважением,
+[ваше имя]
+[телефон]`
+};
+const TEMPLATE_VARS = [
+  ['название', r => r.name],
+  ['категория', r => r.category],
+  ['город', r => r.city],
+  ['адрес', r => r.address],
+  ['сайт', r => r.website]
+];
+
+let contactLog = loadJSON(LOG_KEY, {});
+let template = loadJSON(TPL_KEY, DEFAULT_TEMPLATE);
+let drafts = new Map(); // row id -> { email, subject, body, edited }
+let mailPage = 1;
+
+tplSubject.value = template.subject;
+tplBody.value = template.body;
+mailerSelect.value = loadJSON(MAILER_KEY, 'mailto');
+
+function fillTemplate(text, row) {
+  let out = text;
+  TEMPLATE_VARS.forEach(([name, get]) => {
+    out = out.split('{' + name + '}').join(get(row) || '');
+  });
+  return out
+    .replace(/[ \t]*\(\s*\)/g, '')     // "()" left from empty variables
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/ +([,.!?])/g, '$1');
+}
+function hasPlaceholders(text) { return /\[[^\]\n]+\]/.test(text); }
+
+function updateMailBtn() {
+  const n = allRows.filter(r => r.emails.length).length;
+  mailBtn.disabled = !n;
+  mailBtn.textContent = n ? `Письма (${n})` : 'Письма';
+}
+
+function pickEmail(row) {
+  const available = row.emails.filter((e, i) =>
+    !(contactLog[e] && contactLog[e].status === 'stop') &&
+    (!genericOnly.checked || row.email_types[i] === 'общая'));
+  return available;
+}
+
+function recipients() {
+  return allRows.filter(r => {
+    const emails = pickEmail(r);
+    if (!emails.length) return false;
+    const d = drafts.get(r.id);
+    const email = d && emails.includes(d.email) ? d.email : emails[0];
+    if (hideSent.checked && contactLog[email] && contactLog[email].status === 'sent') return false;
+    return true;
+  });
+}
+
+function draftFor(row) {
+  const emails = pickEmail(row);
+  let d = drafts.get(row.id);
+  if (!d) {
+    d = { email: emails[0], subject: fillTemplate(template.subject, row), body: fillTemplate(template.body, row), edited: false };
+    drafts.set(row.id, d);
+  }
+  if (!emails.includes(d.email)) d.email = emails[0];
+  return d;
+}
+
+function regenerateDrafts() {
+  allRows.forEach(row => {
+    const d = drafts.get(row.id);
+    if (d && !d.edited) {
+      d.subject = fillTemplate(template.subject, row);
+      d.body = fillTemplate(template.body, row);
+    }
+  });
+}
+
+function renderStopList() {
+  const stopped = Object.entries(contactLog).filter(([, v]) => v.status === 'stop');
+  stopCountEl.textContent = stopped.length;
+  stopListEl.innerHTML = stopped.length
+    ? stopped.map(([email]) => `<div class="stop-item"><span>${escapeHtml(email)}</span><button data-unstop="${escapeHtml(email)}">убрать</button></div>`).join('')
+    : '<div class="note">Пусто</div>';
+}
+
+function renderMailList() {
+  const list = recipients();
+  const sentCount = allRows.reduce((n, r) => n + r.emails.filter(e => contactLog[e] && contactLog[e].status === 'sent').length, 0);
+  let html = `<div id="mailCounters">
+    <span class="stat">Получателей: <b>${list.length}</b></span>
+    <span class="stat">Отправлено из этой выборки: <b>${sentCount}</b></span>
+  </div>`;
+
+  if (!list.length) {
+    html += `<div class="empty-state">Нет получателей. ${genericOnly.checked ? 'Попробуйте снять галочку «Только общие адреса» или ' : ''}найдите почты на сайтах на главном экране.</div>`;
+    mailList.innerHTML = html;
+    return;
+  }
+
+  list.slice(0, mailPage * PAGE_SIZE).forEach(row => {
+    const d = draftFor(row);
+    const emails = pickEmail(row);
+    const log = contactLog[d.email];
+    const isSent = log && log.status === 'sent';
+    const warn = hasPlaceholders(d.subject + d.body)
+      ? '<div class="mail-warn">Замените поля в [квадратных скобках], чтобы отправить.</div>' : '';
+    html += `<div class="mail-card${isSent ? ' is-sent' : ''}" data-id="${escapeHtml(row.id)}">
+      <div class="mail-card-head">
+        <b>${escapeHtml(row.name)}</b><span>${escapeHtml(row.category)}${row.address ? ' · ' + escapeHtml(row.address) : ''}</span>
+        ${isSent ? `<span class="tag sent">отправлено ${escapeHtml(log.date)}</span>` : ''}
+        ${d.edited ? '<span class="tag source">изменено вручную</span>' : ''}
+      </div>
+      <div class="row"><label>Кому</label>
+        ${emails.length > 1
+          ? `<select data-field="email">${emails.map(e => `<option value="${escapeHtml(e)}"${e === d.email ? ' selected' : ''}>${escapeHtml(e)}</option>`).join('')}</select>`
+          : `<span>${escapeHtml(d.email)}</span>`}
+      </div>
+      <div class="row"><label>Тема</label><input type="text" data-field="subject" value="${escapeHtml(d.subject)}"></div>
+      <textarea data-field="body">${escapeHtml(d.body)}</textarea>
+      ${warn}
+      <div class="mail-actions">
+        <button class="primary" data-action="open">Открыть в почте</button>
+        <button data-action="copy">Копировать текст</button>
+        <button data-action="${isSent ? 'unsent' : 'sent'}">${isSent ? 'Снять отметку' : '✓ Отметить отправленным'}</button>
+        <button data-action="stop">В стоп-лист</button>
+        ${d.edited ? '<button data-action="reset">Сбросить к шаблону</button>' : ''}
+      </div>
+    </div>`;
+  });
+
+  if (list.length > mailPage * PAGE_SIZE) {
+    html += `<button id="mailMore" style="width:100%">Показать ещё (${list.length - mailPage * PAGE_SIZE})</button>`;
+  }
+  const scrollTop = mailList.scrollTop;
+  mailList.innerHTML = html;
+  mailList.scrollTop = scrollTop;
+}
+
+function composeUrl(to, subject, body) {
+  const enc = encodeURIComponent;
+  if (mailerSelect.value === 'gmail') return `https://mail.google.com/mail/?view=cm&fs=1&to=${enc(to)}&su=${enc(subject)}&body=${enc(body)}`;
+  if (mailerSelect.value === 'yandex') return `https://mail.yandex.ru/compose?to=${enc(to)}&subject=${enc(subject)}&body=${enc(body)}`;
+  return `mailto:${to}?subject=${enc(subject)}&body=${enc(body.replace(/\r?\n/g, '\r\n'))}`;
+}
+
+function setLog(email, status, name) {
+  if (status) contactLog[email] = { status, date: new Date().toISOString().slice(0, 10), name: name || '' };
+  else delete contactLog[email];
+  saveJSON(LOG_KEY, contactLog);
+}
+
+function openMailPanel() {
+  mailPage = 1;
+  mailOverlay.classList.remove('hidden');
+  renderStopList();
+  renderMailList();
+}
+function closeMailPanel() {
+  mailOverlay.classList.add('hidden');
+  renderResults();
+}
+
+// Variable chips: insert at cursor of the last focused template field
+let lastTplField = tplBody;
+[tplSubject, tplBody].forEach(f => f.addEventListener('focus', () => { lastTplField = f; }));
+TEMPLATE_VARS.forEach(([name]) => {
+  const b = document.createElement('button');
+  b.className = 'var-chip';
+  b.type = 'button';
+  b.textContent = '{' + name + '}';
+  b.addEventListener('click', () => {
+    const f = lastTplField;
+    const pos = f.selectionStart ?? f.value.length;
+    f.value = f.value.slice(0, pos) + '{' + name + '}' + f.value.slice(f.selectionEnd ?? pos);
+    f.focus();
+    f.selectionStart = f.selectionEnd = pos + name.length + 2;
+    onTemplateChange();
+  });
+  varChips.appendChild(b);
+});
+
+let tplTimer = null;
+function onTemplateChange() {
+  clearTimeout(tplTimer);
+  tplTimer = setTimeout(() => {
+    template = { subject: tplSubject.value, body: tplBody.value };
+    saveJSON(TPL_KEY, template);
+    regenerateDrafts();
+    renderMailList();
+  }, 300);
+}
+tplSubject.addEventListener('input', onTemplateChange);
+tplBody.addEventListener('input', onTemplateChange);
+tplReset.addEventListener('click', () => {
+  tplSubject.value = DEFAULT_TEMPLATE.subject;
+  tplBody.value = DEFAULT_TEMPLATE.body;
+  onTemplateChange();
+});
+mailerSelect.addEventListener('change', () => saveJSON(MAILER_KEY, mailerSelect.value));
+genericOnly.addEventListener('change', () => { mailPage = 1; renderMailList(); });
+hideSent.addEventListener('change', () => { mailPage = 1; renderMailList(); });
+mailBtn.addEventListener('click', openMailPanel);
+mailClose.addEventListener('click', closeMailPanel);
+
+stopListEl.addEventListener('click', (e) => {
+  const email = e.target.getAttribute('data-unstop');
+  if (!email) return;
+  setLog(email, null);
+  renderStopList();
+  renderMailList();
+});
+
+// Per-card edits (no re-render while typing, so focus is kept)
+mailList.addEventListener('input', (e) => {
+  const card = e.target.closest('.mail-card');
+  const field = e.target.getAttribute('data-field');
+  if (!card || !field || field === 'email') return;
+  const d = drafts.get(card.getAttribute('data-id'));
+  if (!d) return;
+  d[field] = e.target.value;
+  d.edited = true;
+});
+mailList.addEventListener('change', (e) => {
+  const card = e.target.closest('.mail-card');
+  if (!card) return;
+  const d = drafts.get(card.getAttribute('data-id'));
+  if (d && e.target.getAttribute('data-field') === 'email') { d.email = e.target.value; renderMailList(); }
+  else if (d && e.target.getAttribute('data-field')) renderMailList(); // show "изменено вручную" after leaving the field
+});
+
+mailList.addEventListener('click', async (e) => {
+  if (e.target.id === 'mailMore') { mailPage++; renderMailList(); return; }
+  const action = e.target.getAttribute('data-action');
+  const card = e.target.closest('.mail-card');
+  if (!action || !card) return;
+  const id = card.getAttribute('data-id');
+  const row = allRows.find(r => r.id === id);
+  const d = drafts.get(id);
+  if (!row || !d) return;
+
+  if (action === 'open') {
+    if (hasPlaceholders(d.subject + d.body)) { renderMailList(); return; }
+    const url = composeUrl(d.email, d.subject, d.body);
+    if (mailerSelect.value === 'mailto') window.location.href = url;
+    else window.open(url, '_blank', 'noopener');
+  } else if (action === 'copy') {
+    const text = `Кому: ${d.email}\nТема: ${d.subject}\n\n${d.body}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      e.target.textContent = 'Скопировано ✓';
+      setTimeout(() => { e.target.textContent = 'Копировать текст'; }, 1500);
+    } catch (err) {
+      e.target.textContent = 'Не удалось скопировать';
+    }
+  } else if (action === 'sent') {
+    setLog(d.email, 'sent', row.name); renderMailList();
+  } else if (action === 'unsent') {
+    setLog(d.email, null); renderMailList();
+  } else if (action === 'stop') {
+    setLog(d.email, 'stop', row.name); renderStopList(); renderMailList();
+  } else if (action === 'reset') {
+    drafts.delete(id); renderMailList();
+  }
+});
+
 // ---------- CSV export (semicolon + BOM so Russian Excel opens it correctly) ----------
 exportBtn.addEventListener('click', () => {
   const rows = visibleRows();
@@ -800,8 +1204,13 @@ exportBtn.addEventListener('click', () => {
     ['name', 'Название'], ['category', 'Категория'], ['emails', 'Почта'], ['email_types', 'Тип почты'], ['email_sources', 'Источник почты'],
     ['phones', 'Телефон'], ['website', 'Сайт'], ['telegram', 'Telegram'], ['whatsapp', 'WhatsApp'],
     ['vk', 'VK'], ['instagram', 'Instagram'], ['address', 'Адрес'], ['opening_hours', 'Часы работы'],
-    ['site_status', 'Проверка сайта'], ['lat', 'Широта'], ['lon', 'Долгота'], ['id', 'OSM ID']
+    ['site_status', 'Проверка сайта'], ['contact_status', 'Статус контакта'], ['lat', 'Широта'], ['lon', 'Долгота'], ['id', 'OSM ID']
   ];
+  rows.forEach(r => {
+    r.contact_status = r.emails
+      .map(e => contactLog[e] ? `${e}: ${contactLog[e].status === 'sent' ? 'отправлено ' + contactLog[e].date : 'стоп-лист'}` : '')
+      .filter(Boolean);
+  });
   const cell = (v) => `"${(Array.isArray(v) ? v.join(', ') : (v ?? '')).toString().replace(/"/g, '""')}"`;
   const lines = [columns.map(c => cell(c[1])).join(';')];
   rows.forEach(r => lines.push(columns.map(c => cell(r[c[0]])).join(';')));
