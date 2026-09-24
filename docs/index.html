@@ -476,6 +476,16 @@ clearBtn.addEventListener('click', () => {
 onlyEmailCheckbox.addEventListener('change', () => { if (allRows.length) renderResults(); });
 
 // ---------- Query building ----------
+// Ray casting: is the point inside the drawn polygon?
+function pointInPolygon(lat, lng, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].lng, yi = poly[i].lat, xj = poly[j].lng, yj = poly[j].lat;
+    if (((yi > lat) !== (yj > lat)) && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+
 function buildPolyString(latlngs) {
   return latlngs.map(p => `${p.lat.toFixed(6)} ${p.lng.toFixed(6)}`).join(' ');
 }
@@ -502,11 +512,13 @@ function parseCustomTags(input) {
 }
 
 // Returns { query } or { error }
-function buildQuery(polyStr) {
+function buildQuery(latlngs) {
   const type = TYPE_BY_ID[typeSelect.value];
   const keyword = nameKeywordInput.value.trim();
   const nameFilter = keyword ? `["name"~"${escapeOverpassString(escapeRegex(keyword))}",i]` : '';
-  const area = `(poly:"${polyStr}")`;
+  const lats = latlngs.map(p => p.lat), lngs = latlngs.map(p => p.lng);
+  const f = (v) => v.toFixed(6);
+  const area = `(${f(Math.min(...lats))},${f(Math.min(...lngs))},${f(Math.max(...lats))},${f(Math.max(...lngs))})`;
   const lines = [];
 
   if (type.tags === 'ANY') {
@@ -525,7 +537,7 @@ function buildQuery(polyStr) {
       lines.push(`  nwr${tagFilter}${nameFilter}${area};`);
     });
   }
-  return { query: `[out:json][timeout:90];\n(\n${lines.join('\n')}\n);\nout center tags;` };
+  return { query: `[out:json][timeout:60];\n(\n${lines.join('\n')}\n);\nout center tags;` };
 }
 
 // ---------- Normalization ----------
@@ -692,54 +704,70 @@ function renderResults() {
 
 // ---------- Overpass fetching ----------
 const OVERPASS_MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
-  'https://overpass.private.coffee/api/interpreter',
-  'https://lz4.overpass-api.de/api/interpreter',
-  'https://z.overpass-api.de/api/interpreter'
+  'https://overpass.private.coffee/api/interpreter'
 ];
+const MIRROR_TIMEOUT_MS = 60000;
+const MIRROR_STAGGER_MS = 5000;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-async function tryMirror(url, query, timeoutMs) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, {
-      method: 'POST',
-      body: 'data=' + encodeURIComponent(query),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
+// Starts the first server immediately and adds the next one every few seconds
+// if nobody has answered yet. The first successful answer wins, the rest are cancelled.
+function fetchViaMirrors(query, onProgress) {
+  return new Promise((resolve, reject) => {
+    const controllers = [];
+    const errors = [];
+    let finished = false;
+    let started = 0;
+    let failed = 0;
 
-async function fetchViaMirrors(query, onAttempt) {
-  const errors = [];
-  for (const url of OVERPASS_MIRRORS) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        onAttempt(url, attempt);
-        const resp = await tryMirror(url, query, 30000);
-        if (resp.status === 429) {
-          errors.push(`${new URL(url).hostname}: 429`);
-          if (attempt === 1) { await sleep(3000); continue; }
-          break;
+    const finish = (fn, value) => {
+      if (finished) return;
+      finished = true;
+      controllers.forEach(c => c.abort());
+      fn(value);
+    };
+
+    OVERPASS_MIRRORS.forEach((url, i) => {
+      setTimeout(async () => {
+        if (finished) return;
+        const host = new URL(url).hostname;
+        const controller = new AbortController();
+        controllers.push(controller);
+        const timer = setTimeout(() => controller.abort(), MIRROR_TIMEOUT_MS);
+        started++;
+        onProgress(started, OVERPASS_MIRRORS.length);
+        try {
+          const resp = await fetch(url, {
+            method: 'POST',
+            body: 'data=' + encodeURIComponent(query),
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            signal: controller.signal
+          });
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const data = await resp.json();
+          if (data.remark && /timed out|out of memory/i.test(data.remark) && !(data.elements || []).length) {
+            throw new Error('сервер не успел обработать запрос');
+          }
+          finish(resolve, data);
+        } catch (err) {
+          if (finished) return;
+          errors.push(`${host}: ${err.name === 'AbortError' ? 'таймаут' : (err.message === 'Failed to fetch' || err.message === 'Load failed' ? 'не отвечает' : err.message)}`);
+          if (++failed === OVERPASS_MIRRORS.length) finish(reject, new Error('все серверы недоступны (' + errors.join('; ') + ')'));
+        } finally {
+          clearTimeout(timer);
         }
-        if (!resp.ok) { errors.push(`${new URL(url).hostname}: HTTP ${resp.status}`); break; }
-        return await resp.json();
-      } catch (err) {
-        errors.push(`${new URL(url).hostname}: ${err.name === 'AbortError' ? 'таймаут' : err.message}`);
-        break;
-      }
-    }
-  }
-  throw new Error('все зеркала недоступны (' + errors.join('; ') + ')');
+      }, i * MIRROR_STAGGER_MS);
+    });
+  });
 }
 
 searchBtn.addEventListener('click', async () => {
   if (!currentPolygonLatLngs) return;
-  const built = buildQuery(buildPolyString(currentPolygonLatLngs));
+  const polygon = currentPolygonLatLngs;
+  const built = buildQuery(polygon);
   if (built.error) { statusText.textContent = built.error; return; }
 
   searchGen++;
@@ -753,11 +781,13 @@ searchBtn.addEventListener('click', async () => {
   resultsEl.innerHTML = '';
 
   try {
-    const data = await fetchViaMirrors(built.query, (url, attempt) => {
-      const suffix = attempt > 1 ? ` (попытка ${attempt})` : '';
-      statusText.innerHTML = `<span class="spinner"></span>Запрашиваю ${new URL(url).hostname}${suffix}...`;
+    statusText.innerHTML = '<span class="spinner"></span>Ищу...';
+    const data = await fetchViaMirrors(built.query, (started, total) => {
+      statusText.innerHTML = started === 1
+        ? '<span class="spinner"></span>Ищу...'
+        : `<span class="spinner"></span>Ищу... Серверы OSM сейчас медленные, подключаю резервный (${started} из ${total})`;
     });
-    allRows = normalize(data.elements || []);
+    allRows = normalize(data.elements || []).filter(r => pointInPolygon(r.lat, r.lon, polygon));
     const typeLabel = TYPE_BY_ID[typeSelect.value].label;
     statusText.textContent = `Результаты: ${typeLabel}`;
     renderStats();
