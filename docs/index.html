@@ -49,7 +49,16 @@
   .hint { font-size: 11px; color: var(--text-dim); margin-top: 4px; line-height: 1.4; }
   .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; cursor: pointer; user-select: none; }
   .checkbox-row input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
-  .hidden-field { display: none; }
+  .hidden-field { display: none !important; }
+  .area-row { display: flex; gap: 6px; }
+  .area-row input { flex: 1; min-width: 0; }
+  #areaResults { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+  #areaResults:empty { display: none; }
+  .area-option { text-align: left; font-size: 12px; line-height: 1.4; padding: 7px 10px; }
+  .area-option small { display: block; color: var(--text-dim); font-size: 11px; }
+  .area-msg { font-size: 12px; color: var(--text-dim); padding: 4px 0; }
+  .area-chip { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; padding: 6px 10px; border-radius: 6px; background: var(--accent-dim); font-size: 12.5px; }
+  .area-chip .linklike { color: var(--text); text-decoration: none; font-size: 13px; }
 
   #controls { padding: 12px 18px; border-bottom: 1px solid var(--panel-border); display: flex; flex-wrap: wrap; gap: 8px; }
   button {
@@ -200,6 +209,16 @@
         <div class="hint">Несколько тегов — через запятую. Список тегов: wiki.openstreetmap.org/wiki/Map_features</div>
       </div>
       <div class="field">
+        <label for="areaInput">Область поиска</label>
+        <div class="area-row">
+          <input type="text" id="areaInput" placeholder="Город или район, например: Владивосток">
+          <button id="areaBtn">Найти</button>
+        </div>
+        <div id="areaChip" class="area-chip hidden-field"><span id="areaChipText"></span><button class="linklike" id="areaChipClear" title="Убрать область">✕</button></div>
+        <div id="areaResults"></div>
+        <div class="hint">Или нарисуйте свою область значком пятиугольника на карте.</div>
+      </div>
+      <div class="field">
         <label for="nameKeyword">Слово в названии (необязательно)</label>
         <input type="text" id="nameKeyword" placeholder="например, авто или hertz">
       </div>
@@ -297,8 +316,8 @@
     <div class="onboard-step">
       <div class="onboard-num">2</div>
       <div>
-        <div class="onboard-title">Нарисуйте область на карте</div>
-        <div class="onboard-desc">Нажмите значок пятиугольника слева сверху на карте, затем ставьте точки кликами. Чтобы замкнуть фигуру, кликните на первую точку.</div>
+        <div class="onboard-title">Выберите область</div>
+        <div class="onboard-desc">Введите город или район и выберите его из списка: граница подставится сама. Или нарисуйте свою область: значок пятиугольника слева сверху на карте, точки ставятся кликами, чтобы замкнуть фигуру, кликните на первую точку.</div>
       </div>
     </div>
     <div class="onboard-step">
@@ -441,7 +460,7 @@ typeSelect.addEventListener('change', () => {
 });
 
 // ---------- Onboarding ----------
-const ONBOARDING_KEY = 'biz_search_onboarding_v4';
+const ONBOARDING_KEY = 'biz_search_onboarding_v5';
 const onboardingOverlay = document.getElementById('onboardingOverlay');
 const onboardingClose = document.getElementById('onboardingClose');
 const helpBtn = document.getElementById('helpBtn');
@@ -475,25 +494,126 @@ map.addControl(new L.Control.Draw({
   edit: { featureGroup: drawnItems, remove: false }
 }));
 
-let currentPolygonLatLngs = null;
+// Search area as a list of rings [{lat, lng}, ...]. One ring for a drawn polygon;
+// several for a city boundary (islands, holes). Point-in-area uses the even-odd rule over all rings.
+let currentRings = null;
+const areaLayer = L.layerGroup().addTo(map);
 const resultMarkers = L.layerGroup().addTo(map);
 let allRows = [];
 
+function setArea(rings, label) {
+  currentRings = rings;
+  searchBtn.disabled = !rings;
+  if (!rings) return;
+  const b = ringsBounds(rings);
+  const big = (b.maxLat - b.minLat) * (b.maxLng - b.minLng) > 4;
+  statusText.textContent = (label ? `Область: ${label}. ` : 'Область выбрана. ') +
+    (big ? 'Область большая: поиск может занять время. Если не пройдёт, выберите район поменьше.' : 'Нажмите «Искать в полигоне».');
+}
+
 map.on(L.Draw.Event.CREATED, (e) => {
   drawnItems.clearLayers();
+  areaLayer.clearLayers();
+  hideAreaChip();
   drawnItems.addLayer(e.layer);
-  currentPolygonLatLngs = e.layer.getLatLngs()[0];
-  searchBtn.disabled = false;
-  statusText.textContent = 'Область выбрана. Нажмите «Искать в полигоне».';
+  setArea([e.layer.getLatLngs()[0]]);
 });
 map.on(L.Draw.Event.EDITED, (e) => {
-  e.layers.eachLayer((layer) => { currentPolygonLatLngs = layer.getLatLngs()[0]; });
+  e.layers.eachLayer((layer) => { currentRings = [layer.getLatLngs()[0]]; });
+});
+
+// ---------- Area search by name (Nominatim, OSM geocoder) ----------
+const areaInput = document.getElementById('areaInput');
+const areaBtn = document.getElementById('areaBtn');
+const areaResults = document.getElementById('areaResults');
+const areaChip = document.getElementById('areaChip');
+const areaChipText = document.getElementById('areaChipText');
+const areaChipClear = document.getElementById('areaChipClear');
+
+const AREA_TYPE_LABELS = {
+  country: 'страна', state: 'регион', region: 'регион', province: 'регион', county: 'район / округ',
+  municipality: 'муниципальный округ', city: 'город', town: 'город', village: 'село', hamlet: 'посёлок',
+  city_district: 'район города', district: 'район', borough: 'район', suburb: 'микрорайон', quarter: 'квартал',
+  neighbourhood: 'квартал', administrative: 'административная граница'
+};
+let areaFoundList = [];
+let lastAreaQueryAt = 0;
+
+function geojsonToRings(geo) {
+  const toRing = (coords) => coords.map(([lng, lat]) => ({ lat, lng }));
+  if (geo.type === 'Polygon') return geo.coordinates.map(toRing);
+  if (geo.type === 'MultiPolygon') return geo.coordinates.flatMap(poly => poly.map(toRing));
+  return null;
+}
+function hideAreaChip() { areaChip.classList.add('hidden-field'); }
+
+async function searchArea() {
+  const q = areaInput.value.trim();
+  if (!q) return;
+  // Nominatim usage policy: max 1 request per second, no autocomplete
+  const wait = 1100 - (Date.now() - lastAreaQueryAt);
+  if (wait > 0) await sleep(wait);
+  lastAreaQueryAt = Date.now();
+
+  areaBtn.disabled = true;
+  areaResults.innerHTML = '<div class="area-msg"><span class="spinner"></span>Ищу границы...</div>';
+  try {
+    const url = 'https://nominatim.openstreetmap.org/search?' + new URLSearchParams({
+      q, format: 'jsonv2', polygon_geojson: '1', polygon_threshold: '0.0005', limit: '8', 'accept-language': 'ru'
+    });
+    const resp = await fetchWithTimeout(url, {}, 20000);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    areaFoundList = data.filter(r => r.geojson && (r.geojson.type === 'Polygon' || r.geojson.type === 'MultiPolygon')).slice(0, 5);
+    if (!areaFoundList.length) {
+      areaResults.innerHTML = '<div class="area-msg">Не нашёл границу с таким названием. Попробуйте уточнить, например «Ленинский район, Владивосток», или нарисуйте область вручную.</div>';
+      return;
+    }
+    areaResults.innerHTML = areaFoundList.map((r, i) => {
+      const kind = AREA_TYPE_LABELS[r.addresstype] || AREA_TYPE_LABELS[r.type] || '';
+      return `<button class="area-option" data-area="${i}">${escapeHtml(r.name || r.display_name.split(',')[0])}<small>${kind ? escapeHtml(kind) + ' · ' : ''}${escapeHtml(r.display_name)}</small></button>`;
+    }).join('');
+  } catch (e) {
+    areaResults.innerHTML = '<div class="area-msg">Сервис поиска границ не ответил. Попробуйте ещё раз через несколько секунд.</div>';
+  } finally {
+    areaBtn.disabled = false;
+  }
+}
+
+function applyArea(result) {
+  const rings = geojsonToRings(result.geojson);
+  if (!rings) return;
+  drawnItems.clearLayers();
+  areaLayer.clearLayers();
+  const layer = L.geoJSON(result.geojson, { style: { color: '#4f8cff', weight: 2, fillOpacity: 0.08 } }).addTo(areaLayer);
+  map.fitBounds(layer.getBounds(), { padding: [20, 20] });
+  const label = result.name || result.display_name.split(',')[0];
+  areaChipText.textContent = label;
+  areaChip.classList.remove('hidden-field');
+  areaResults.innerHTML = '';
+  setArea(rings, label);
+}
+
+areaBtn.addEventListener('click', searchArea);
+areaInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); searchArea(); } });
+areaResults.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-area]');
+  if (btn) applyArea(areaFoundList[Number(btn.getAttribute('data-area'))]);
+});
+areaChipClear.addEventListener('click', () => {
+  areaLayer.clearLayers();
+  hideAreaChip();
+  setArea(null);
+  statusText.textContent = 'Выберите область: найдите по названию или нарисуйте на карте.';
 });
 
 clearBtn.addEventListener('click', () => {
   drawnItems.clearLayers();
+  areaLayer.clearLayers();
+  hideAreaChip();
+  areaResults.innerHTML = '';
   resultMarkers.clearLayers();
-  currentPolygonLatLngs = null;
+  currentRings = null;
   allRows = [];
   searchGen++;
   crawlStop = true;
@@ -510,14 +630,26 @@ clearBtn.addEventListener('click', () => {
 onlyEmailCheckbox.addEventListener('change', () => { if (allRows.length) renderResults(); });
 
 // ---------- Query building ----------
-// Ray casting: is the point inside the drawn polygon?
-function pointInPolygon(lat, lng, poly) {
+// Ray casting over all rings (even-odd rule): handles multipolygons and holes
+function pointInRings(lat, lng, rings) {
   let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const xi = poly[i].lng, yi = poly[i].lat, xj = poly[j].lng, yj = poly[j].lat;
-    if (((yi > lat) !== (yj > lat)) && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi)) inside = !inside;
+  for (const poly of rings) {
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i].lng, yi = poly[i].lat, xj = poly[j].lng, yj = poly[j].lat;
+      if (((yi > lat) !== (yj > lat)) && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi)) inside = !inside;
+    }
   }
   return inside;
+}
+function ringsBounds(rings) {
+  const b = { minLat: Infinity, maxLat: -Infinity, minLng: Infinity, maxLng: -Infinity };
+  rings.forEach(r => r.forEach(p => {
+    if (p.lat < b.minLat) b.minLat = p.lat;
+    if (p.lat > b.maxLat) b.maxLat = p.lat;
+    if (p.lng < b.minLng) b.minLng = p.lng;
+    if (p.lng > b.maxLng) b.maxLng = p.lng;
+  }));
+  return b;
 }
 
 function buildPolyString(latlngs) {
@@ -546,13 +678,13 @@ function parseCustomTags(input) {
 }
 
 // Returns { query } or { error }
-function buildQuery(latlngs) {
+function buildQuery(rings) {
   const type = TYPE_BY_ID[typeSelect.value];
   const keyword = nameKeywordInput.value.trim();
   const nameFilter = keyword ? `["name"~"${escapeOverpassString(escapeRegex(keyword))}",i]` : '';
-  const lats = latlngs.map(p => p.lat), lngs = latlngs.map(p => p.lng);
+  const b = ringsBounds(rings);
   const f = (v) => v.toFixed(6);
-  const area = `(${f(Math.min(...lats))},${f(Math.min(...lngs))},${f(Math.max(...lats))},${f(Math.max(...lngs))})`;
+  const area = `(${f(b.minLat)},${f(b.minLng)},${f(b.maxLat)},${f(b.maxLng)})`;
   const lines = [];
 
   if (type.tags === 'ANY') {
@@ -804,8 +936,8 @@ function fetchViaMirrors(query, onProgress) {
 }
 
 searchBtn.addEventListener('click', async () => {
-  if (!currentPolygonLatLngs) return;
-  const polygon = currentPolygonLatLngs;
+  if (!currentRings) return;
+  const polygon = currentRings;
   const built = buildQuery(polygon);
   if (built.error) { statusText.textContent = built.error; return; }
 
@@ -826,7 +958,7 @@ searchBtn.addEventListener('click', async () => {
         ? '<span class="spinner"></span>Ищу...'
         : `<span class="spinner"></span>Ищу... Серверы OSM сейчас медленные, подключаю резервный (${started} из ${total})`;
     });
-    allRows = normalize(data.elements || []).filter(r => pointInPolygon(r.lat, r.lon, polygon));
+    allRows = normalize(data.elements || []).filter(r => pointInRings(r.lat, r.lon, polygon));
     const typeLabel = TYPE_BY_ID[typeSelect.value].label;
     statusText.textContent = `Результаты: ${typeLabel}`;
     renderStats();
