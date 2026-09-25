@@ -134,14 +134,34 @@
   .mail-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
   .mail-actions button { font-size: 12px; padding: 6px 10px; }
   .mail-warn { font-size: 11.5px; color: var(--warn); margin-top: 6px; }
-  #stopList { font-size: 12px; color: var(--text-dim); }
-  #stopList .stop-item { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; }
-  #stopList .stop-item button { font-size: 11px; padding: 2px 8px; }
+  .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  input[type="number"], input[type="date"] { width: 100%; font-family: inherit; font-size: 13px; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--panel-border); background: var(--input); color: var(--text); outline: none; color-scheme: dark; }
+  #mailMain { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  #mailTabs { display: flex; gap: 6px; padding: 12px 18px 0; flex-wrap: wrap; border-bottom: 1px solid var(--panel-border); }
+  .mail-tab { border-radius: 6px 6px 0 0; border-bottom: none; margin-bottom: -1px; background: transparent; color: var(--text-dim); }
+  .mail-tab.active { background: var(--panel); color: var(--text); border-color: var(--panel-border); }
+  .mail-tab .count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--input); font-size: 11px; }
+  .mail-tab.due .count { background: var(--warn); color: #1a1a1a; }
+  .mail-card select { width: auto; max-width: 100%; }
+  .mail-meta { font-size: 12px; color: var(--text-dim); display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+  .mail-meta input[type="date"] { width: auto; padding: 4px 8px; font-size: 12px; }
+  .mail-card textarea.note-field { min-height: 54px; }
+  .history { font-size: 11.5px; color: var(--text-dim); margin-top: 6px; }
+  .history summary { cursor: pointer; }
+  .history div { padding: 2px 0 2px 10px; }
+  .status-sent { color: var(--accent); }
+  .status-replied, .status-interested { color: var(--ok); }
+  .status-declined, .status-stop { color: #ff7a7a; }
+  .tag.warn { background: rgba(224,165,74,0.15); color: var(--warn); }
+  .linklike { background: none; border: none; padding: 0; color: var(--accent); font-size: inherit; cursor: pointer; text-decoration: underline; }
+  .linklike:hover { background: none; }
 
   @media (max-width: 700px) {
     #mailBody { flex-direction: column; overflow-y: auto; }
     #mailEditor { width: 100%; min-width: 0; border-right: none; border-bottom: 1px solid var(--panel-border); overflow-y: visible; }
     #mailList { overflow-y: visible; padding: 12px 14px; }
+    #mailTabs { padding: 10px 14px 0; }
+    #mailMain { min-height: auto; }
     #mailTop { padding: 10px 14px; }
   }
 
@@ -209,12 +229,19 @@
 
 <div id="mailOverlay" class="hidden">
   <div id="mailTop">
-    <h2>Письма</h2>
+    <h2>Письма и контакты</h2>
     <button id="mailClose">← Назад к карте</button>
   </div>
   <div id="mailBody">
     <div id="mailEditor">
-      <div class="note">Напишите шаблон один раз, для каждой компании он заполнится автоматически. Перед отправкой письмо можно поправить под конкретного получателя. Отправляете вы сами из своей почты, по одному письму.</div>
+      <div class="field">
+        <label for="tplKind">Шаблон</label>
+        <select id="tplKind">
+          <option value="first">Первое письмо</option>
+          <option value="follow">Напоминание</option>
+        </select>
+        <div class="hint" id="tplKindHint"></div>
+      </div>
       <div class="field">
         <label for="tplSubject">Тема</label>
         <input type="text" id="tplSubject">
@@ -229,6 +256,16 @@
         <div class="hint">Поля в [квадратных скобках] нужно заменить своим текстом, иначе письмо не откроется для отправки.</div>
       </div>
       <button id="tplReset">Вернуть шаблон по умолчанию</button>
+      <div class="settings-grid">
+        <div class="field">
+          <label for="followDays">Напомнить через, дней</label>
+          <input type="number" id="followDays" min="1" max="60">
+        </div>
+        <div class="field">
+          <label for="maxLetters">Максимум писем компании</label>
+          <input type="number" id="maxLetters" min="1" max="5">
+        </div>
+      </div>
       <div class="field">
         <label for="mailerSelect">Чем открывать письмо</label>
         <select id="mailerSelect">
@@ -238,14 +275,12 @@
         </select>
       </div>
       <label class="checkbox-row"><input type="checkbox" id="genericOnly" checked> Только общие адреса (info@, sales@...)</label>
-      <label class="checkbox-row"><input type="checkbox" id="hideSent" checked> Скрыть уже отправленные</label>
-      <div class="note">Общие адреса компаний безопаснее с точки зрения закона о персональных данных. Отметки «отправлено» и стоп-лист хранятся только в этом браузере.</div>
-      <details>
-        <summary class="note" style="cursor:pointer">Стоп-лист (<span id="stopCount">0</span>)</summary>
-        <div id="stopList"></div>
-      </details>
+      <div class="note">Общие адреса компаний безопаснее с точки зрения закона о персональных данных. Почты с несуществующих доменов в новые письма не попадают. Статусы, заметки и история хранятся только в этом браузере.</div>
     </div>
-    <div id="mailList"></div>
+    <div id="mailMain">
+      <div id="mailTabs"></div>
+      <div id="mailList"></div>
+    </div>
   </div>
 </div>
 
@@ -463,11 +498,10 @@ clearBtn.addEventListener('click', () => {
   searchGen++;
   crawlStop = true;
   drafts = new Map();
-  mailBtn.disabled = true;
-  mailBtn.textContent = 'Письма';
   searchBtn.disabled = true;
   exportBtn.disabled = true;
   crawlBtn.disabled = true;
+  updateMailBtn();
   statusText.textContent = 'Нарисуйте полигон на карте.';
   statsEl.style.display = 'none';
   resultsEl.innerHTML = '<div class="empty-state">Выберите тип бизнеса, нарисуйте полигон на карте и нажмите «Искать в полигоне».</div>';
@@ -624,12 +658,14 @@ function renderStats() {
   const withPhone = allRows.filter(r => r.phones.length).length;
   const withSite = allRows.filter(r => r.website).length;
   const checked = allRows.filter(r => r.site_status).length;
+  const brokenEmails = [...new Set(allRows.flatMap(r => r.emails))].filter(isBadEmail).length;
   statsEl.innerHTML = `
     <span class="stat">Всего: <b>${total}</b></span>
     <span class="stat">С почтой: <b>${withEmail}</b></span>
     <span class="stat">С телефоном: <b>${withPhone}</b></span>
     <span class="stat">С сайтом: <b>${withSite}</b></span>
-    ${checked ? `<span class="stat">Сайтов проверено: <b>${checked}</b></span>` : ''}`;
+    ${checked ? `<span class="stat">Сайтов проверено: <b>${checked}</b></span>` : ''}
+    ${brokenEmails ? `<span class="stat">Нерабочих почт: <b>${brokenEmails}</b></span>` : ''}`;
   statsEl.style.display = total ? 'flex' : 'none';
 }
 
@@ -660,8 +696,11 @@ function renderResults() {
         ? `<a class="tag source" href="${escapeHtml(safeUrl(src))}" target="_blank" rel="noopener" title="${escapeHtml(src)}">с сайта</a>`
         : '';
       const log = contactLog[e];
-      const logTag = log ? (log.status === 'sent' ? '<span class="tag sent">отправлено</span>' : '<span class="tag stop">стоп-лист</span>') : '';
-      return `✉ <a href="mailto:${escapeHtml(e)}">${escapeHtml(e)}</a><span class="tag ${r.email_types[i] === 'общая' ? 'generic' : 'personal'}">${r.email_types[i]}</span>${srcTag}${logTag}<br>`;
+      const logTag = log
+        ? `<span class="tag ${['declined', 'stop'].includes(log.status) ? 'stop' : 'sent'}">${STATUS_LABELS[log.status] || log.status}</span>`
+        : '';
+      const checkTag = emailCheckTag(e);
+      return `✉ <a href="mailto:${escapeHtml(e)}">${escapeHtml(e)}</a><span class="tag ${r.email_types[i] === 'общая' ? 'generic' : 'personal'}">${r.email_types[i]}</span>${srcTag}${checkTag}${logTag}<br>`;
     }).join('');
     const siteStatusHtml = r.site_status && !(r.site_status === 'ok' && r.emails.length)
       ? `<span class="site-status">${escapeHtml(r.site_status === 'ok' ? 'на сайте почта не найдена' : SITE_STATUS_LABELS[r.site_status] || r.site_status)}</span><br>`
@@ -793,12 +832,14 @@ searchBtn.addEventListener('click', async () => {
     renderStats();
     renderResults();
     updateCrawlBtn();
+    checkEmailsInBackground();
   } catch (err) {
     allRows = [];
     statusText.textContent = 'Ошибка запроса: ' + err.message;
     resultsEl.innerHTML = '<div class="empty-state">Не удалось получить данные. Попробуйте ещё раз через минуту или уменьшите область.</div>';
   } finally {
     searchBtn.disabled = false;
+    updateMailBtn();
   }
 });
 
@@ -923,36 +964,130 @@ crawlBtn.addEventListener('click', async () => {
       ? `Поиск почт остановлен. Проверено сайтов: ${done}, почты найдены на ${sitesWithNewEmails}.`
       : `Готово. Проверено сайтов: ${done}, почты найдены на ${sitesWithNewEmails}.`;
   }
+  checkEmailsInBackground();
   crawlStop = false;
   updateCrawlBtn();
 });
 
-// ---------- Letters ----------
+// ---------- Email checks (via backend: syntax, typos, domain and MX records) ----------
+const EMAIL_CHECK_LABELS = {
+  no_domain: 'домен не существует',
+  no_mail: 'домен не принимает почту',
+  invalid: 'некорректный адрес',
+  no_mx: 'нет почтового сервера, доставка сомнительна',
+  typo: 'возможна опечатка'
+};
+const BAD_EMAIL_STATUSES = new Set(['no_domain', 'no_mail', 'invalid']);
+const emailChecks = new Map(); // email -> { status, suggestion }
+let checkingEmails = false;
+
+function isBadEmail(email) {
+  const c = emailChecks.get(email);
+  return !!(c && BAD_EMAIL_STATUSES.has(c.status));
+}
+function emailCheckTag(email) {
+  const c = emailChecks.get(email);
+  if (!c || c.status === 'ok' || c.status === 'unknown') return '';
+  if (c.status === 'typo') return `<span class="tag warn" title="Возможно, имелось в виду ${escapeHtml(c.suggestion)}">опечатка? ${escapeHtml(c.suggestion)}</span>`;
+  return `<span class="tag ${BAD_EMAIL_STATUSES.has(c.status) ? 'stop' : 'warn'}">${escapeHtml(EMAIL_CHECK_LABELS[c.status] || c.status)}</span>`;
+}
+function refreshViews() {
+  renderStats();
+  renderResults();
+  if (!mailOverlay.classList.contains('hidden')) renderMailList();
+}
+
+async function checkEmailsInBackground() {
+  if (checkingEmails) return;
+  const pending = () => [...new Set(allRows.flatMap(r => r.emails))].filter(e => !emailChecks.has(e));
+  if (!pending().length) return;
+  checkingEmails = true;
+  const gen = searchGen;
+  let completed = true;
+  try {
+    const list = pending();
+    for (let i = 0; i < list.length; i += 50) {
+      if (gen !== searchGen) { completed = false; break; }
+      let data;
+      try {
+        // Long timeout: a sleeping free Render instance needs up to a minute to wake up
+        const resp = await fetchWithTimeout(CRAWLER_API + '/api/check-emails', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ emails: list.slice(i, i + 50) })
+        }, 90000);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        data = await resp.json();
+      } catch (e) {
+        completed = false; // server unavailable: leave emails unchecked, don't retry in a loop
+        break;
+      }
+      data.results.forEach(r => emailChecks.set(r.email, { status: r.status, suggestion: r.suggestion || '' }));
+      if (gen === searchGen) refreshViews();
+    }
+  } finally {
+    checkingEmails = false;
+  }
+  // New emails may have appeared meanwhile (e.g. from the website crawler)
+  if (completed && gen === searchGen && pending().length) setTimeout(checkEmailsInBackground, 500);
+}
+
+function fixTypo(row, email) {
+  const c = emailChecks.get(email);
+  if (!row || !c || !c.suggestion) return;
+  const i = row.emails.indexOf(email);
+  if (i < 0) return;
+  if (row.emails.includes(c.suggestion)) {
+    row.emails.splice(i, 1); row.email_types.splice(i, 1); row.email_sources.splice(i, 1);
+  } else {
+    row.emails[i] = c.suggestion;
+    row.email_types[i] = classifyEmail(c.suggestion);
+  }
+  drafts.delete(row.id);
+  refreshViews();
+  checkEmailsInBackground();
+}
+
+// ---------- Letters and mini-CRM ----------
 const mailBtn = document.getElementById('mailBtn');
 const mailOverlay = document.getElementById('mailOverlay');
 const mailClose = document.getElementById('mailClose');
+const tplKind = document.getElementById('tplKind');
+const tplKindHint = document.getElementById('tplKindHint');
 const tplSubject = document.getElementById('tplSubject');
 const tplBody = document.getElementById('tplBody');
 const tplReset = document.getElementById('tplReset');
 const varChips = document.getElementById('varChips');
+const followDaysInput = document.getElementById('followDays');
+const maxLettersInput = document.getElementById('maxLetters');
 const mailerSelect = document.getElementById('mailerSelect');
 const genericOnly = document.getElementById('genericOnly');
-const hideSent = document.getElementById('hideSent');
+const mailTabs = document.getElementById('mailTabs');
 const mailList = document.getElementById('mailList');
-const stopCountEl = document.getElementById('stopCount');
-const stopListEl = document.getElementById('stopList');
 
 const LOG_KEY = 'grc_contact_log_v1';
 const TPL_KEY = 'grc_template_v1';
+const FOLLOW_TPL_KEY = 'grc_followup_template_v1';
+const SETTINGS_KEY = 'grc_settings_v1';
 const MAILER_KEY = 'grc_mailer_v1';
 const PAGE_SIZE = 20;
+
+const STATUS_LABELS = { sent: 'Отправлено', replied: 'Ответил', interested: 'Интересно', declined: 'Отказ', stop: 'Не писать' };
+const ACTIVE_STATUSES = ['sent', 'replied', 'interested'];
 
 function loadJSON(key, def) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch (e) { return def; } }
 function saveJSON(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {} }
 
-const DEFAULT_TEMPLATE = {
-  subject: 'Предложение для {название}',
-  body: `Здравствуйте!
+const pad2 = (n) => String(n).padStart(2, '0');
+function toDateStr(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+function todayStr() { return toDateStr(new Date()); }
+function addDays(dateStr, n) { const d = new Date(dateStr + 'T00:00:00'); d.setDate(d.getDate() + n); return toDateStr(d); }
+function fmtDate(dateStr) { if (!dateStr) return ''; const [y, m, d] = dateStr.split('-'); return `${d}.${m}.${y}`; }
+
+const DEFAULT_TEMPLATES = {
+  first: {
+    subject: 'Предложение для {название}',
+    body: `Здравствуйте!
 
 Меня зовут [ваше имя], я представляю [ваша компания]. Увидел {название} ({адрес}) и хочу предложить [суть предложения].
 
@@ -963,140 +1098,300 @@ const DEFAULT_TEMPLATE = {
 С уважением,
 [ваше имя]
 [телефон]`
+  },
+  follow: {
+    subject: 'Re: {тема_письма}',
+    body: `Здравствуйте!
+
+Напоминаю о своём письме от {дата_письма} про [коротко суть]. Возможно, оно затерялось среди других.
+
+[Одно предложение: чем это полезно для {название}]
+
+Если неактуально, просто ответьте «нет», и я больше не побеспокою.
+
+С уважением,
+[ваше имя]
+[телефон]`
+  }
 };
 const TEMPLATE_VARS = [
   ['название', r => r.name],
   ['категория', r => r.category],
   ['город', r => r.city],
   ['адрес', r => r.address],
-  ['сайт', r => r.website]
+  ['сайт', r => r.website],
+  ['тема_письма', r => r.lastSubject, 'follow'],
+  ['дата_письма', r => fmtDate(r.lastSentDate), 'follow']
 ];
 
+let settings = Object.assign({ followDays: 5, maxLetters: 3 }, loadJSON(SETTINGS_KEY, {}));
+let templates = {
+  first: loadJSON(TPL_KEY, DEFAULT_TEMPLATES.first),
+  follow: loadJSON(FOLLOW_TPL_KEY, DEFAULT_TEMPLATES.follow)
+};
 let contactLog = loadJSON(LOG_KEY, {});
-let template = loadJSON(TPL_KEY, DEFAULT_TEMPLATE);
-let drafts = new Map(); // row id -> { email, subject, body, edited }
+let drafts = new Map(); // key -> { email, subject, body, edited }
+let mailTab = 'new';
 let mailPage = 1;
 
-tplSubject.value = template.subject;
-tplBody.value = template.body;
-mailerSelect.value = loadJSON(MAILER_KEY, 'mailto');
-
-function fillTemplate(text, row) {
-  let out = text;
-  TEMPLATE_VARS.forEach(([name, get]) => {
-    out = out.split('{' + name + '}').join(get(row) || '');
+// Migrate entries saved by the previous version ({status, date, name})
+(function migrateLog() {
+  let changed = false;
+  Object.values(contactLog).forEach(e => {
+    if (e.history) return;
+    changed = true;
+    const date = e.date || todayStr();
+    e.history = [{ date, text: e.status === 'sent' ? 'Отправлено первое письмо' : 'Добавлен в «Не писать»' }];
+    e.note = e.note || '';
+    if (e.status === 'sent') {
+      e.sentCount = 1; e.lastSentDate = date; e.lastSubject = e.lastSubject || '';
+      e.followUp = addDays(date, settings.followDays);
+    } else {
+      e.sentCount = 0; e.followUp = '';
+    }
   });
+  if (changed) saveJSON(LOG_KEY, contactLog);
+})();
+
+function snapshot(row) {
+  return { name: row.name, category: row.category, city: row.city, address: row.address, website: row.website };
+}
+function saveLog() { saveJSON(LOG_KEY, contactLog); }
+
+function logEvent(email, text) {
+  const e = contactLog[email];
+  if (e) e.history.push({ date: todayStr(), text });
+}
+
+function markSent(email, row, subject, isFollowUp) {
+  let e = contactLog[email];
+  if (!e) {
+    e = contactLog[email] = Object.assign(snapshot(row), { status: 'sent', sentCount: 0, history: [], note: '', lastSubject: '', lastSentDate: '', followUp: '' });
+  }
+  e.status = 'sent';
+  e.sentCount = (e.sentCount || 0) + 1;
+  e.lastSentDate = todayStr();
+  if (!isFollowUp || !e.lastSubject) e.lastSubject = subject;
+  e.followUp = e.sentCount >= settings.maxLetters ? '' : addDays(todayStr(), settings.followDays);
+  logEvent(email, isFollowUp ? `Отправлено напоминание (${e.sentCount}-е письмо)` : 'Отправлено первое письмо');
+  if (!e.followUp) logEvent(email, `Достигнут лимит писем (${settings.maxLetters}), напоминаний больше не будет`);
+  saveLog();
+}
+
+function setStatus(email, status, row) {
+  let e = contactLog[email];
+  if (!e) {
+    if (!row) return;
+    e = contactLog[email] = Object.assign(snapshot(row), { status, sentCount: 0, history: [], note: '', lastSubject: '', lastSentDate: '', followUp: '' });
+  }
+  e.status = status;
+  if (status !== 'sent') e.followUp = '';
+  logEvent(email, `Статус: ${STATUS_LABELS[status]}`);
+  saveLog();
+}
+
+function isDue(e) {
+  return ACTIVE_STATUSES.includes(e.status) && e.followUp && e.followUp <= todayStr();
+}
+function logEntries() {
+  return Object.entries(contactLog).map(([email, e]) => Object.assign({ email }, e));
+}
+
+// ----- Template filling -----
+function fillTemplate(text, data) {
+  let out = text;
+  TEMPLATE_VARS.forEach(([name, get]) => { out = out.split('{' + name + '}').join(get(data) || ''); });
   return out
-    .replace(/[ \t]*\(\s*\)/g, '')     // "()" left from empty variables
+    .replace(/[ \t]*\(\s*\)/g, '')   // "()" left from empty variables
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/ +([,.!?])/g, '$1');
 }
 function hasPlaceholders(text) { return /\[[^\]\n]+\]/.test(text); }
 
-function updateMailBtn() {
-  const n = allRows.filter(r => r.emails.length).length;
-  mailBtn.disabled = !n;
-  mailBtn.textContent = n ? `Письма (${n})` : 'Письма';
+// ----- Recipients for the "new" tab -----
+function isContacted(row) { return row.emails.some(e => contactLog[e]); }
+function pickEmails(row) {
+  return row.emails.filter((e, i) => !isBadEmail(e) && (!genericOnly.checked || row.email_types[i] === 'общая'));
 }
-
-function pickEmail(row) {
-  const available = row.emails.filter((e, i) =>
-    !(contactLog[e] && contactLog[e].status === 'stop') &&
-    (!genericOnly.checked || row.email_types[i] === 'общая'));
-  return available;
+function newRecipients() {
+  return allRows.filter(r => r.emails.length && !isContacted(r) && pickEmails(r).length);
 }
-
-function recipients() {
-  return allRows.filter(r => {
-    const emails = pickEmail(r);
-    if (!emails.length) return false;
-    const d = drafts.get(r.id);
-    const email = d && emails.includes(d.email) ? d.email : emails[0];
-    if (hideSent.checked && contactLog[email] && contactLog[email].status === 'sent') return false;
-    return true;
-  });
-}
-
-function draftFor(row) {
-  const emails = pickEmail(row);
+function newDraft(row) {
+  const emails = pickEmails(row);
   let d = drafts.get(row.id);
   if (!d) {
-    d = { email: emails[0], subject: fillTemplate(template.subject, row), body: fillTemplate(template.body, row), edited: false };
+    d = { email: emails[0], subject: fillTemplate(templates.first.subject, row), body: fillTemplate(templates.first.body, row), edited: false };
     drafts.set(row.id, d);
   }
   if (!emails.includes(d.email)) d.email = emails[0];
   return d;
 }
-
+function followDraft(entry) {
+  const key = 'log:' + entry.email;
+  let d = drafts.get(key);
+  if (!d) {
+    d = { email: entry.email, subject: fillTemplate(templates.follow.subject, entry), body: fillTemplate(templates.follow.body, entry), edited: false };
+    drafts.set(key, d);
+  }
+  return d;
+}
 function regenerateDrafts() {
-  allRows.forEach(row => {
-    const d = drafts.get(row.id);
-    if (d && !d.edited) {
-      d.subject = fillTemplate(template.subject, row);
-      d.body = fillTemplate(template.body, row);
+  drafts.forEach((d, key) => {
+    if (d.edited) return;
+    if (key.startsWith('log:')) {
+      const email = key.slice(4);
+      const e = contactLog[email];
+      if (!e) return;
+      const data = Object.assign({ email }, e);
+      d.subject = fillTemplate(templates.follow.subject, data);
+      d.body = fillTemplate(templates.follow.body, data);
+    } else {
+      const row = allRows.find(r => r.id === key);
+      if (!row) return;
+      d.subject = fillTemplate(templates.first.subject, row);
+      d.body = fillTemplate(templates.first.body, row);
     }
   });
 }
 
-function renderStopList() {
-  const stopped = Object.entries(contactLog).filter(([, v]) => v.status === 'stop');
-  stopCountEl.textContent = stopped.length;
-  stopListEl.innerHTML = stopped.length
-    ? stopped.map(([email]) => `<div class="stop-item"><span>${escapeHtml(email)}</span><button data-unstop="${escapeHtml(email)}">убрать</button></div>`).join('')
-    : '<div class="note">Пусто</div>';
+// ----- Tabs -----
+function tabData() {
+  const entries = logEntries();
+  const due = entries.filter(isDue).sort((a, b) => a.followUp.localeCompare(b.followUp));
+  const order = { interested: 0, replied: 1, sent: 2 };
+  const work = entries.filter(e => !isDue(e) && ACTIVE_STATUSES.includes(e.status))
+    .sort((a, b) => (order[a.status] - order[b.status]) || (a.followUp || '9').localeCompare(b.followUp || '9'));
+  const archive = entries.filter(e => !ACTIVE_STATUSES.includes(e.status))
+    .sort((a, b) => (b.history.at(-1)?.date || '').localeCompare(a.history.at(-1)?.date || ''));
+  return { new: newRecipients(), due, work, archive };
 }
 
-function renderMailList() {
-  const list = recipients();
-  const sentCount = allRows.reduce((n, r) => n + r.emails.filter(e => contactLog[e] && contactLog[e].status === 'sent').length, 0);
-  let html = `<div id="mailCounters">
-    <span class="stat">Получателей: <b>${list.length}</b></span>
-    <span class="stat">Отправлено из этой выборки: <b>${sentCount}</b></span>
+function updateMailBtn() {
+  const data = tabData();
+  const total = data.new.length + data.due.length + data.work.length + data.archive.length;
+  mailBtn.disabled = !total && !allRows.some(r => r.emails.length);
+  mailBtn.textContent = data.due.length ? `Письма · напомнить: ${data.due.length}` : (data.new.length ? `Письма (${data.new.length})` : 'Письма');
+}
+
+function renderTabs(data) {
+  const tabs = [
+    ['new', 'Новые', data.new.length],
+    ['due', 'Напомнить', data.due.length],
+    ['work', 'В работе', data.work.length],
+    ['archive', 'Архив', data.archive.length]
+  ];
+  mailTabs.innerHTML = tabs.map(([id, label, n]) =>
+    `<button class="mail-tab${mailTab === id ? ' active' : ''}${id === 'due' && n ? ' due' : ''}" data-tab="${id}">${label}<span class="count">${n}</span></button>`
+  ).join('');
+}
+
+// ----- Cards -----
+function actionsHtml(buttons) {
+  return `<div class="mail-actions">${buttons.filter(Boolean).join('')}</div>`;
+}
+
+function newCardHtml(row) {
+  const d = newDraft(row);
+  const emails = pickEmails(row);
+  const check = emailChecks.get(d.email);
+  const warn = [
+    hasPlaceholders(d.subject + d.body) ? 'Замените поля в [квадратных скобках], чтобы отправить.' : '',
+    check && check.status === 'typo' ? `Похоже на опечатку в адресе. <button class="linklike" data-action="fixtypo">Исправить на ${escapeHtml(check.suggestion)}</button>` : '',
+    check && check.status === 'no_mx' ? 'У домена нет почтового сервера (MX), письмо может не дойти.' : ''
+  ].filter(Boolean).map(t => `<div class="mail-warn">${t}</div>`).join('');
+
+  return `<div class="mail-card" data-kind="new" data-key="${escapeHtml(row.id)}">
+    <div class="mail-card-head">
+      <b>${escapeHtml(row.name)}</b><span>${escapeHtml(row.category)}${row.address ? ' · ' + escapeHtml(row.address) : ''}</span>
+      ${d.edited ? '<span class="tag source">изменено вручную</span>' : ''}
+    </div>
+    <div class="row"><label>Кому</label>
+      ${emails.length > 1
+        ? `<select data-field="email">${emails.map(e => `<option value="${escapeHtml(e)}"${e === d.email ? ' selected' : ''}>${escapeHtml(e)}</option>`).join('')}</select>`
+        : `<span>${escapeHtml(d.email)}</span>`}
+      ${emailCheckTag(d.email)}
+    </div>
+    <div class="row"><label>Тема</label><input type="text" data-field="subject" value="${escapeHtml(d.subject)}"></div>
+    <textarea data-field="body">${escapeHtml(d.body)}</textarea>
+    ${warn}
+    ${actionsHtml([
+      '<button class="primary" data-action="open">Открыть в почте</button>',
+      '<button data-action="copy">Копировать текст</button>',
+      '<button data-action="sent">✓ Отметить отправленным</button>',
+      '<button data-action="stop">Не писать</button>',
+      d.edited ? '<button data-action="reset">Сбросить к шаблону</button>' : ''
+    ])}
   </div>`;
+}
 
-  if (!list.length) {
-    html += `<div class="empty-state">Нет получателей. ${genericOnly.checked ? 'Попробуйте снять галочку «Только общие адреса» или ' : ''}найдите почты на сайтах на главном экране.</div>`;
-    mailList.innerHTML = html;
-    return;
-  }
-
-  list.slice(0, mailPage * PAGE_SIZE).forEach(row => {
-    const d = draftFor(row);
-    const emails = pickEmail(row);
-    const log = contactLog[d.email];
-    const isSent = log && log.status === 'sent';
-    const warn = hasPlaceholders(d.subject + d.body)
-      ? '<div class="mail-warn">Замените поля в [квадратных скобках], чтобы отправить.</div>' : '';
-    html += `<div class="mail-card${isSent ? ' is-sent' : ''}" data-id="${escapeHtml(row.id)}">
-      <div class="mail-card-head">
-        <b>${escapeHtml(row.name)}</b><span>${escapeHtml(row.category)}${row.address ? ' · ' + escapeHtml(row.address) : ''}</span>
-        ${isSent ? `<span class="tag sent">отправлено ${escapeHtml(log.date)}</span>` : ''}
-        ${d.edited ? '<span class="tag source">изменено вручную</span>' : ''}
-      </div>
-      <div class="row"><label>Кому</label>
-        ${emails.length > 1
-          ? `<select data-field="email">${emails.map(e => `<option value="${escapeHtml(e)}"${e === d.email ? ' selected' : ''}>${escapeHtml(e)}</option>`).join('')}</select>`
-          : `<span>${escapeHtml(d.email)}</span>`}
-      </div>
+function logCardHtml(entry, withDraft) {
+  const statusOptions = Object.entries(STATUS_LABELS)
+    .map(([k, v]) => `<option value="${k}"${k === entry.status ? ' selected' : ''}>${v}</option>`).join('');
+  let draftHtml = '';
+  if (withDraft) {
+    const d = followDraft(entry);
+    const warn = hasPlaceholders(d.subject + d.body) ? '<div class="mail-warn">Замените поля в [квадратных скобках], чтобы отправить.</div>' : '';
+    draftHtml = `
       <div class="row"><label>Тема</label><input type="text" data-field="subject" value="${escapeHtml(d.subject)}"></div>
       <textarea data-field="body">${escapeHtml(d.body)}</textarea>
-      ${warn}
-      <div class="mail-actions">
-        <button class="primary" data-action="open">Открыть в почте</button>
-        <button data-action="copy">Копировать текст</button>
-        <button data-action="${isSent ? 'unsent' : 'sent'}">${isSent ? 'Снять отметку' : '✓ Отметить отправленным'}</button>
-        <button data-action="stop">В стоп-лист</button>
-        ${d.edited ? '<button data-action="reset">Сбросить к шаблону</button>' : ''}
-      </div>
-    </div>`;
-  });
+      ${warn}`;
+  }
+  const history = (entry.history || []).slice().reverse()
+    .map(h => `<div>${escapeHtml(fmtDate(h.date))} — ${escapeHtml(h.text)}</div>`).join('');
 
-  if (list.length > mailPage * PAGE_SIZE) {
-    html += `<button id="mailMore" style="width:100%">Показать ещё (${list.length - mailPage * PAGE_SIZE})</button>`;
+  return `<div class="mail-card" data-kind="log" data-key="${escapeHtml(entry.email)}">
+    <div class="mail-card-head">
+      <b>${escapeHtml(entry.name || entry.email)}</b><span>${escapeHtml(entry.category || '')}${entry.address ? ' · ' + escapeHtml(entry.address) : ''}</span>
+    </div>
+    <div class="row"><label>Почта</label><span>${escapeHtml(entry.email)}</span>${emailCheckTag(entry.email)}</div>
+    <div class="mail-meta">
+      <span>Статус: <select data-field="status" class="status-${entry.status}">${statusOptions}</select></span>
+      <span>Писем: <b>${entry.sentCount || 0}</b>${entry.lastSentDate ? `, последнее ${fmtDate(entry.lastSentDate)}` : ''}</span>
+      <span>Напомнить: <input type="date" data-field="followUp" value="${escapeHtml(entry.followUp || '')}"></span>
+    </div>
+    <textarea class="note-field" data-field="note" placeholder="Заметка: что ответили, с кем говорили, о чём договорились">${escapeHtml(entry.note || '')}</textarea>
+    ${draftHtml}
+    ${actionsHtml([
+      withDraft ? '<button class="primary" data-action="open">Открыть в почте</button>' : '',
+      withDraft ? '<button data-action="copy">Копировать текст</button>' : '',
+      withDraft ? '<button data-action="followsent">✓ Напоминание отправлено</button>' : '',
+      withDraft ? '<button data-action="snooze">Отложить на 3 дня</button>' : '',
+      entry.website ? `<a href="${escapeHtml(safeUrl(entry.website))}" target="_blank" rel="noopener"><button>Сайт</button></a>` : '',
+      '<button data-action="forget">Удалить из учёта</button>'
+    ])}
+    ${history ? `<details class="history"><summary>История (${entry.history.length})</summary>${history}</details>` : ''}
+  </div>`;
+}
+
+const EMPTY_TEXT = {
+  new: () => allRows.length
+    ? `Новых получателей нет. ${genericOnly.checked ? 'Попробуйте снять галочку «Только общие адреса», ' : ''}найдите почты на сайтах или сделайте поиск в другом районе.`
+    : 'Сделайте поиск на карте: компании с почтой появятся здесь.',
+  due: () => 'Сегодня напоминать некому. Дата напоминания ставится автоматически, когда вы отмечаете письмо отправленным.',
+  work: () => 'Здесь будут компании, которым вы написали: ждём ответа, ответили, заинтересовались.',
+  archive: () => 'Здесь будут отказы и контакты с пометкой «Не писать».'
+};
+
+function renderMailList() {
+  const data = tabData();
+  renderTabs(data);
+  const list = data[mailTab];
+  if (!list.length) {
+    mailList.innerHTML = `<div class="empty-state">${EMPTY_TEXT[mailTab]()}</div>`;
+    updateMailBtn();
+    return;
+  }
+  const visible = list.slice(0, mailPage * PAGE_SIZE);
+  let html = mailTab === 'new'
+    ? visible.map(newCardHtml).join('')
+    : visible.map(e => logCardHtml(e, mailTab === 'due')).join('');
+  if (list.length > visible.length) {
+    html += `<button id="mailMore" style="width:100%">Показать ещё (${list.length - visible.length})</button>`;
   }
   const scrollTop = mailList.scrollTop;
   mailList.innerHTML = html;
   mailList.scrollTop = scrollTop;
+  updateMailBtn();
 }
 
 function composeUrl(to, subject, body) {
@@ -1106,125 +1401,200 @@ function composeUrl(to, subject, body) {
   return `mailto:${to}?subject=${enc(subject)}&body=${enc(body.replace(/\r?\n/g, '\r\n'))}`;
 }
 
-function setLog(email, status, name) {
-  if (status) contactLog[email] = { status, date: new Date().toISOString().slice(0, 10), name: name || '' };
-  else delete contactLog[email];
-  saveJSON(LOG_KEY, contactLog);
+// ----- Template editor -----
+const TPL_HINTS = {
+  first: 'Для новых компаний из поиска.',
+  follow: 'Для вкладки «Напомнить». {тема_письма} и {дата_письма} берутся из первого письма.'
+};
+function loadTemplateIntoEditor() {
+  const t = templates[tplKind.value];
+  tplSubject.value = t.subject;
+  tplBody.value = t.body;
+  tplKindHint.textContent = TPL_HINTS[tplKind.value];
+  varChips.innerHTML = '';
+  TEMPLATE_VARS.filter(v => !v[2] || v[2] === tplKind.value).forEach(([name]) => {
+    const b = document.createElement('button');
+    b.className = 'var-chip';
+    b.type = 'button';
+    b.textContent = '{' + name + '}';
+    b.addEventListener('click', () => insertVariable(name));
+    varChips.appendChild(b);
+  });
 }
-
-function openMailPanel() {
-  mailPage = 1;
-  mailOverlay.classList.remove('hidden');
-  renderStopList();
-  renderMailList();
-}
-function closeMailPanel() {
-  mailOverlay.classList.add('hidden');
-  renderResults();
-}
-
-// Variable chips: insert at cursor of the last focused template field
 let lastTplField = tplBody;
 [tplSubject, tplBody].forEach(f => f.addEventListener('focus', () => { lastTplField = f; }));
-TEMPLATE_VARS.forEach(([name]) => {
-  const b = document.createElement('button');
-  b.className = 'var-chip';
-  b.type = 'button';
-  b.textContent = '{' + name + '}';
-  b.addEventListener('click', () => {
-    const f = lastTplField;
-    const pos = f.selectionStart ?? f.value.length;
-    f.value = f.value.slice(0, pos) + '{' + name + '}' + f.value.slice(f.selectionEnd ?? pos);
-    f.focus();
-    f.selectionStart = f.selectionEnd = pos + name.length + 2;
-    onTemplateChange();
-  });
-  varChips.appendChild(b);
-});
-
+function insertVariable(name) {
+  const f = lastTplField;
+  const pos = f.selectionStart ?? f.value.length;
+  f.value = f.value.slice(0, pos) + '{' + name + '}' + f.value.slice(f.selectionEnd ?? pos);
+  f.focus();
+  f.selectionStart = f.selectionEnd = pos + name.length + 2;
+  onTemplateChange();
+}
 let tplTimer = null;
 function onTemplateChange() {
   clearTimeout(tplTimer);
   tplTimer = setTimeout(() => {
-    template = { subject: tplSubject.value, body: tplBody.value };
-    saveJSON(TPL_KEY, template);
+    templates[tplKind.value] = { subject: tplSubject.value, body: tplBody.value };
+    saveJSON(tplKind.value === 'first' ? TPL_KEY : FOLLOW_TPL_KEY, templates[tplKind.value]);
     regenerateDrafts();
     renderMailList();
   }, 300);
 }
+
+tplKind.addEventListener('change', () => {
+  loadTemplateIntoEditor();
+  if (tplKind.value === 'follow' && mailTab === 'new') { mailTab = 'due'; mailPage = 1; renderMailList(); }
+  if (tplKind.value === 'first' && mailTab === 'due') { mailTab = 'new'; mailPage = 1; renderMailList(); }
+});
 tplSubject.addEventListener('input', onTemplateChange);
 tplBody.addEventListener('input', onTemplateChange);
 tplReset.addEventListener('click', () => {
-  tplSubject.value = DEFAULT_TEMPLATE.subject;
-  tplBody.value = DEFAULT_TEMPLATE.body;
+  const def = DEFAULT_TEMPLATES[tplKind.value];
+  tplSubject.value = def.subject;
+  tplBody.value = def.body;
   onTemplateChange();
 });
+
+followDaysInput.value = settings.followDays;
+maxLettersInput.value = settings.maxLetters;
+function onSettingsChange() {
+  settings.followDays = Math.min(60, Math.max(1, parseInt(followDaysInput.value, 10) || 5));
+  settings.maxLetters = Math.min(5, Math.max(1, parseInt(maxLettersInput.value, 10) || 3));
+  saveJSON(SETTINGS_KEY, settings);
+}
+followDaysInput.addEventListener('change', onSettingsChange);
+maxLettersInput.addEventListener('change', onSettingsChange);
+
+mailerSelect.value = loadJSON(MAILER_KEY, 'mailto');
 mailerSelect.addEventListener('change', () => saveJSON(MAILER_KEY, mailerSelect.value));
 genericOnly.addEventListener('change', () => { mailPage = 1; renderMailList(); });
-hideSent.addEventListener('change', () => { mailPage = 1; renderMailList(); });
+
+function openMailPanel() {
+  const data = tabData();
+  mailTab = data.due.length ? 'due' : (data.new.length ? 'new' : (data.work.length ? 'work' : 'new'));
+  tplKind.value = mailTab === 'due' ? 'follow' : 'first';
+  loadTemplateIntoEditor();
+  mailPage = 1;
+  mailOverlay.classList.remove('hidden');
+  renderMailList();
+  checkEmailsInBackground();
+}
+function closeMailPanel() {
+  mailOverlay.classList.add('hidden');
+  if (allRows.length) renderResults();
+  updateMailBtn();
+}
 mailBtn.addEventListener('click', openMailPanel);
 mailClose.addEventListener('click', closeMailPanel);
 
-stopListEl.addEventListener('click', (e) => {
-  const email = e.target.getAttribute('data-unstop');
-  if (!email) return;
-  setLog(email, null);
-  renderStopList();
+mailTabs.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-tab]');
+  if (!btn) return;
+  mailTab = btn.getAttribute('data-tab');
+  mailPage = 1;
+  if (mailTab === 'due' && tplKind.value !== 'follow') { tplKind.value = 'follow'; loadTemplateIntoEditor(); }
+  if (mailTab === 'new' && tplKind.value !== 'first') { tplKind.value = 'first'; loadTemplateIntoEditor(); }
   renderMailList();
 });
 
-// Per-card edits (no re-render while typing, so focus is kept)
+// ----- Card events -----
+function cardContext(el) {
+  const card = el.closest('.mail-card');
+  if (!card) return null;
+  const kind = card.getAttribute('data-kind');
+  const key = card.getAttribute('data-key');
+  return { card, kind, key, draftKey: kind === 'new' ? key : 'log:' + key };
+}
+
+// Typing: update state without re-rendering, so the cursor stays in place
 mailList.addEventListener('input', (e) => {
-  const card = e.target.closest('.mail-card');
+  const ctx = cardContext(e.target);
   const field = e.target.getAttribute('data-field');
-  if (!card || !field || field === 'email') return;
-  const d = drafts.get(card.getAttribute('data-id'));
-  if (!d) return;
-  d[field] = e.target.value;
-  d.edited = true;
+  if (!ctx || !field) return;
+  if (field === 'subject' || field === 'body') {
+    const d = drafts.get(ctx.draftKey);
+    if (d) { d[field] = e.target.value; d.edited = true; }
+  } else if (field === 'note' && contactLog[ctx.key]) {
+    contactLog[ctx.key].note = e.target.value;
+    saveLog();
+  }
 });
+
 mailList.addEventListener('change', (e) => {
-  const card = e.target.closest('.mail-card');
-  if (!card) return;
-  const d = drafts.get(card.getAttribute('data-id'));
-  if (d && e.target.getAttribute('data-field') === 'email') { d.email = e.target.value; renderMailList(); }
-  else if (d && e.target.getAttribute('data-field')) renderMailList(); // show "изменено вручную" after leaving the field
+  const ctx = cardContext(e.target);
+  const field = e.target.getAttribute('data-field');
+  if (!ctx || !field) return;
+  if (field === 'email') {
+    const d = drafts.get(ctx.draftKey);
+    if (d) d.email = e.target.value;
+    renderMailList();
+  } else if (field === 'status') {
+    setStatus(ctx.key, e.target.value);
+    renderMailList();
+  } else if (field === 'followUp' && contactLog[ctx.key]) {
+    contactLog[ctx.key].followUp = e.target.value;
+    logEvent(ctx.key, e.target.value ? `Напоминание перенесено на ${fmtDate(e.target.value)}` : 'Напоминание снято');
+    saveLog();
+    renderMailList();
+  } else if (field === 'subject' || field === 'body') {
+    renderMailList(); // show the "изменено вручную" mark after leaving the field
+  }
 });
 
 mailList.addEventListener('click', async (e) => {
   if (e.target.id === 'mailMore') { mailPage++; renderMailList(); return; }
   const action = e.target.getAttribute('data-action');
-  const card = e.target.closest('.mail-card');
-  if (!action || !card) return;
-  const id = card.getAttribute('data-id');
-  const row = allRows.find(r => r.id === id);
-  const d = drafts.get(id);
-  if (!row || !d) return;
+  const ctx = cardContext(e.target);
+  if (!action || !ctx) return;
+  const row = ctx.kind === 'new' ? allRows.find(r => r.id === ctx.key) : null;
+  const d = drafts.get(ctx.draftKey);
 
   if (action === 'open') {
-    if (hasPlaceholders(d.subject + d.body)) { renderMailList(); return; }
+    if (!d || hasPlaceholders(d.subject + d.body)) { renderMailList(); return; }
     const url = composeUrl(d.email, d.subject, d.body);
     if (mailerSelect.value === 'mailto') window.location.href = url;
     else window.open(url, '_blank', 'noopener');
   } else if (action === 'copy') {
-    const text = `Кому: ${d.email}\nТема: ${d.subject}\n\n${d.body}`;
+    if (!d) return;
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(`Кому: ${d.email}\nТема: ${d.subject}\n\n${d.body}`);
       e.target.textContent = 'Скопировано ✓';
       setTimeout(() => { e.target.textContent = 'Копировать текст'; }, 1500);
     } catch (err) {
       e.target.textContent = 'Не удалось скопировать';
     }
-  } else if (action === 'sent') {
-    setLog(d.email, 'sent', row.name); renderMailList();
-  } else if (action === 'unsent') {
-    setLog(d.email, null); renderMailList();
-  } else if (action === 'stop') {
-    setLog(d.email, 'stop', row.name); renderStopList(); renderMailList();
+  } else if (action === 'sent' && row && d) {
+    markSent(d.email, row, d.subject, false);
+    drafts.delete(ctx.draftKey);
+    renderMailList();
+  } else if (action === 'followsent' && d) {
+    markSent(ctx.key, null, d.subject, true);
+    drafts.delete(ctx.draftKey);
+    renderMailList();
+  } else if (action === 'snooze' && contactLog[ctx.key]) {
+    contactLog[ctx.key].followUp = addDays(todayStr(), 3);
+    logEvent(ctx.key, `Напоминание отложено на ${fmtDate(contactLog[ctx.key].followUp)}`);
+    saveLog();
+    renderMailList();
+  } else if (action === 'stop' && row && d) {
+    setStatus(d.email, 'stop', row);
+    renderMailList();
+  } else if (action === 'fixtypo' && row && d) {
+    fixTypo(row, d.email);
   } else if (action === 'reset') {
-    drafts.delete(id); renderMailList();
+    drafts.delete(ctx.draftKey);
+    renderMailList();
+  } else if (action === 'forget') {
+    if (!confirm('Удалить компанию из учёта? История и заметки пропадут, и она снова появится среди новых.')) return;
+    delete contactLog[ctx.key];
+    drafts.delete(ctx.draftKey);
+    saveLog();
+    renderMailList();
   }
 });
+
+updateMailBtn();
 
 // ---------- CSV export (semicolon + BOM so Russian Excel opens it correctly) ----------
 exportBtn.addEventListener('click', () => {
@@ -1234,11 +1604,17 @@ exportBtn.addEventListener('click', () => {
     ['name', 'Название'], ['category', 'Категория'], ['emails', 'Почта'], ['email_types', 'Тип почты'], ['email_sources', 'Источник почты'],
     ['phones', 'Телефон'], ['website', 'Сайт'], ['telegram', 'Telegram'], ['whatsapp', 'WhatsApp'],
     ['vk', 'VK'], ['instagram', 'Instagram'], ['address', 'Адрес'], ['opening_hours', 'Часы работы'],
-    ['site_status', 'Проверка сайта'], ['contact_status', 'Статус контакта'], ['lat', 'Широта'], ['lon', 'Долгота'], ['id', 'OSM ID']
+    ['site_status', 'Проверка сайта'], ['email_checks', 'Проверка почты'], ['contact_status', 'Статус контакта'], ['lat', 'Широта'], ['lon', 'Долгота'], ['id', 'OSM ID']
   ];
   rows.forEach(r => {
     r.contact_status = r.emails
-      .map(e => contactLog[e] ? `${e}: ${contactLog[e].status === 'sent' ? 'отправлено ' + contactLog[e].date : 'стоп-лист'}` : '')
+      .map(e => {
+        const l = contactLog[e];
+        return l ? `${e}: ${STATUS_LABELS[l.status] || l.status}${l.lastSentDate ? ', писем ' + l.sentCount + ', последнее ' + fmtDate(l.lastSentDate) : ''}` : '';
+      })
+      .filter(Boolean);
+    r.email_checks = r.emails
+      .map(e => { const c = emailChecks.get(e); return c ? `${e}: ${c.status === 'ok' ? 'ок' : (c.status === 'typo' ? 'опечатка? ' + c.suggestion : EMAIL_CHECK_LABELS[c.status] || c.status)}` : ''; })
       .filter(Boolean);
   });
   const cell = (v) => `"${(Array.isArray(v) ? v.join(', ') : (v ?? '')).toString().replace(/"/g, '""')}"`;

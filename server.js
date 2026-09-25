@@ -294,6 +294,55 @@ async function mapWithConcurrency(items, limit, fn) {
   return results;
 }
 
+// ---------- Email checks (syntax, domain, MX records) ----------
+const resolver = new dns.Resolver({ timeout: 4000, tries: 2 });
+const DOMAIN_CACHE_TTL_MS = 60 * 60 * 1000;
+const domainCache = new Map(); // domain -> { result, expires }
+const MAX_EMAILS_PER_CHECK = 50;
+
+// Frequent typos in popular mail domains
+const TYPO_DOMAINS = {
+  'gmial.com': 'gmail.com', 'gmai.com': 'gmail.com', 'gamil.com': 'gmail.com', 'gmail.co': 'gmail.com', 'gmail.cm': 'gmail.com', 'gmaill.com': 'gmail.com',
+  'yandex.ry': 'yandex.ru', 'yandx.ru': 'yandex.ru', 'yadex.ru': 'yandex.ru', 'yandex.r': 'yandex.ru', 'yndex.ru': 'yandex.ru',
+  'ya.ry': 'ya.ru', 'mail.ry': 'mail.ru', 'mali.ru': 'mail.ru', 'maill.ru': 'mail.ru', 'mail.r': 'mail.ru', 'mial.ru': 'mail.ru',
+  'inbox.ry': 'inbox.ru', 'bk.ry': 'bk.ru', 'list.ry': 'list.ru', 'rambler.ry': 'rambler.ru', 'ramler.ru': 'rambler.ru',
+  'mail.kzz': 'mail.kz', 'hotmail.co': 'hotmail.com', 'outlook.co': 'outlook.com', 'yahoo.co': 'yahoo.com'
+};
+const EMAIL_SYNTAX_RE = /^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,24}$/i;
+
+async function checkDomain(domain) {
+  const cached = domainCache.get(domain);
+  if (cached && cached.expires > Date.now()) return cached.result;
+
+  let result;
+  try {
+    const mx = await resolver.resolveMx(domain);
+    // RFC 7505 "null MX" (exchange "." or empty) means the domain explicitly accepts no mail
+    if (mx.length && mx.every(r => !r.exchange || r.exchange === '.')) result = 'no_mail';
+    else result = mx.length ? 'ok' : 'no_mx';
+  } catch (err) {
+    if (err.code === 'ENOTFOUND' || err.code === 'NXDOMAIN') {
+      result = 'no_domain';
+    } else if (err.code === 'ENODATA') {
+      // Domain exists but has no MX: delivery falls back to the A record and often fails
+      try { await resolver.resolve4(domain); result = 'no_mx'; }
+      catch (e) { result = e.code === 'ENOTFOUND' ? 'no_domain' : 'no_mx'; }
+    } else {
+      result = 'unknown'; // DNS timeout or server error: don't judge
+    }
+  }
+  if (result !== 'unknown') domainCache.set(domain, { result, expires: Date.now() + DOMAIN_CACHE_TTL_MS });
+  return result;
+}
+
+async function checkEmail(email) {
+  const e = String(email || '').trim().toLowerCase();
+  if (!EMAIL_SYNTAX_RE.test(e)) return { email, status: 'invalid' };
+  const domain = e.split('@')[1];
+  if (TYPO_DOMAINS[domain]) return { email, status: 'typo', suggestion: e.split('@')[0] + '@' + TYPO_DOMAINS[domain] };
+  return { email, status: await checkDomain(domain) };
+}
+
 // ---------- Routes ----------
 app.get('/health', (req, res) => res.json({ ok: true }));
 
@@ -311,7 +360,16 @@ app.post('/api/find-emails', async (req, res) => {
   res.json({ results });
 });
 
+app.post('/api/check-emails', async (req, res) => {
+  if (rateLimited(req.ip)) return res.status(429).json({ error: 'Слишком много запросов, подождите минуту' });
+  const emails = Array.isArray(req.body && req.body.emails) ? [...new Set(req.body.emails.map(String))] : null;
+  if (!emails || !emails.length) return res.status(400).json({ error: 'Передайте emails: [...]' });
+  if (emails.length > MAX_EMAILS_PER_CHECK) return res.status(400).json({ error: `Не больше ${MAX_EMAILS_PER_CHECK} адресов за запрос` });
+  const results = await mapWithConcurrency(emails, 10, (e) => checkEmail(e).catch(() => ({ email: e, status: 'unknown' })));
+  res.json({ results });
+});
+
 if (require.main === module) {
   app.listen(PORT, () => console.log(`Contact finder API on port ${PORT}`));
 }
-module.exports = { extractEmails, findContactLinks, parseRobots, allowedByRobots, isPrivateIp, decodeCloudflare, app };
+module.exports = { checkEmail, extractEmails, findContactLinks, parseRobots, allowedByRobots, isPrivateIp, decodeCloudflare, app };
