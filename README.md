@@ -20,3 +20,18 @@
   По умолчанию: `https://vladkiselev.github.io`.
 
 Данные карты: © участники OpenStreetMap, лицензия ODbL.
+
+## Персонализация через GigaChat
+1. Получите ключ авторизации в личном кабинете GigaChat API (developers.sber.ru → проект GigaChat API → «Настройки API»).
+2. На Render в сервисе → Environment добавьте переменную `GIGACHAT_AUTH_KEY` со значением ключа.
+3. Положите корневой сертификат Минцифры в репозиторий: `certs/russian_trusted_root_ca.pem`
+   (скачать: https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt). Сервер доверяет ему только для запросов к GigaChat.
+
+Необязательные переменные:
+- `GIGACHAT_SCOPE` — по умолчанию `GIGACHAT_API_PERS` (физлица); для ИП и юрлиц `GIGACHAT_API_B2B` или `GIGACHAT_API_CORP`.
+- `GIGACHAT_MODEL` — по умолчанию `GigaChat-2`; можно `GigaChat-2-Pro` или `GigaChat-2-Max`.
+- `AI_DAILY_LIMIT` — сколько генераций в сутки разрешено (по умолчанию 300), защита от чужого расхода токенов.
+
+## Мессенджеры
+Кнопки открывают чат WhatsApp (ссылка wa.me с готовым текстом) или профиль Telegram; отправляет пользователь сам.
+Автоматической рассылки и массовой проверки номеров нет намеренно: это нарушает правила мессенджеров и ведёт к блокировке аккаунта.
