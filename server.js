@@ -119,7 +119,7 @@ async function fetchText(urlStr, { hops = 0, acceptAny = false } = {}) {
     const ct = resp.headers.get('content-type') || '';
     if (!acceptAny && !/text\/html|xhtml|text\/plain/i.test(ct)) return null;
     const buf = await readLimited(resp, MAX_BYTES);
-    return { url: u.toString(), text: decodeBody(buf, ct) };
+    return { url: u.toString(), text: decodeBody(buf, ct), contentType: ct };
   } catch (e) {
     return null;
   } finally {
@@ -496,6 +496,7 @@ async function personalizeOne(offer, c) {
     `Категория: ${c.category || 'не указана'}`,
     `Город: ${c.city || 'не указан'}`,
     `Сайт: ${c.website || 'нет'}`,
+    c.site_issues ? `Замечания к сайту компании (упоминай, только если это связано с предложением отправителя): ${c.site_issues}` : '',
     '',
     'Текст с сайта компании (может быть неполным):',
     '<<<',
@@ -504,6 +505,97 @@ async function personalizeOne(offer, c) {
   ].join('\n');
   const out = await gigaChat([{ role: 'system', content: AI_SYSTEM_PROMPT }, { role: 'user', content: user }]);
   return { text: cleanAiText(out), usedSite: !!text };
+}
+
+// ---------- Website audit: is the company site outdated? ----------
+// Heuristic score 0–100 built from signals that are cheap to detect and easy to explain to a client.
+const PARKED_RE = /(домен продается|домен продаётся|this domain is for sale|domain is for sale|buy this domain|парковк[аи] домена|срок регистрации домена ист[её]к|domain has expired|account suspended|аккаунт заблокирован|сайт заблокирован|хостинг заблокирован|услуга хостинга приостановлена|сайт временно недоступен|website coming soon|under construction|сайт в разработке|сайт находится в разработке|default web site page|welcome to nginx|apache2 ubuntu default page|it works!)/i;
+
+function auditHtml(page, { https, elapsedMs }) {
+  const html = page.text;
+  const lower = html.toLowerCase();
+  const signals = []; // { code, weight, text }
+  const add = (code, weight, text) => signals.push({ code, weight, text });
+  const year = new Date().getFullYear();
+
+  const visibleText = htmlToText(html);
+  const textLen = visibleText.replace(/\s/g, '').length;
+  // Sites rendered by JavaScript (React, Vue, Tilda blocks...) have little text in raw HTML: that's not "broken"
+  const jsApp = /id=["'](root|app|__next|__nuxt)["']|<script[^>]+src=[^>]+(chunk|bundle|app)[^>]*\.js/i.test(html);
+  if ((PARKED_RE.test(visibleText) && textLen < 1500) || (textLen < 80 && !jsApp)) {
+    return { status: 'broken', score: 100, level: 'broken', reasons: ['Вместо сайта заглушка, страница хостинга или почти пустая страница'], codes: ['broken'] };
+  }
+
+  if (!https) add('no_https', 25, 'Нет HTTPS: браузеры помечают сайт как «Не защищён»');
+  if (!/<meta[^>]+name=["']?viewport/i.test(html)) add('no_viewport', 25, 'Не адаптирован под телефоны (нет настройки для мобильных экранов)');
+
+  // Latest year in copyright notices, e.g. "© 2009–2016"
+  let copyrightYear = 0;
+  for (const m of visibleText.matchAll(/(?:©|&copy;|\(c\)|copyright|все права защищены)[^\n]{0,60}/gi)) {
+    for (const y of m[0].matchAll(/\b(19[9]\d|20[0-4]\d)\b/g)) copyrightYear = Math.max(copyrightYear, Number(y[1]));
+  }
+  if (copyrightYear && copyrightYear <= year - 5) add('old_copyright', 20, `В подвале © ${copyrightYear}: сайт, похоже, давно не обновляли`);
+  else if (copyrightYear && copyrightYear <= year - 3) add('old_copyright', 10, `В подвале © ${copyrightYear}`);
+
+  if (/\.swf\b|application\/x-shockwave-flash|<embed[^>]+flash/i.test(html)) add('flash', 20, 'Используется Flash, он не работает в современных браузерах');
+  if (/<frameset\b/i.test(html)) add('frames', 20, 'Сайт построен на фреймах, так давно не делают');
+
+  const oldTags = ['<font', '<center', '<marquee', '<blink', 'bgcolor='].filter(t => lower.includes(t));
+  if (oldTags.length) add('old_markup', 15, `Устаревшая HTML-разметка (${oldTags.map(t => t.replace(/[<=]/g, '')).join(', ')})`);
+
+  const layoutTables = (html.match(/<table[^>]+(width|cellpadding|border)=/gi) || []).length;
+  if (layoutTables >= 4) add('table_layout', 10, 'Вёрстка таблицами, как в 2000-х');
+
+  if (/<!doctype html public "-\/\/w3c\/\/dtd (x?html) (4|1\.0)/i.test(html)) add('old_doctype', 10, 'Старый стандарт HTML (HTML 4 / XHTML)');
+
+  const jq = html.match(/jquery[.-]?(\d)\.(\d+)(?:\.\d+)?(?:\.min)?\.js/i);
+  if (jq) {
+    const major = Number(jq[1]), minor = Number(jq[2]);
+    if (major === 1 && minor < 9) add('old_jquery', 10, `Очень старая версия jQuery (${major}.${minor})`);
+    else if (major === 1) add('old_jquery', 5, `Старая версия jQuery (${major}.${minor})`);
+  }
+
+  const generator = (html.match(/<meta[^>]+name=["']generator["'][^>]*content=["']([^"']+)["']/i) || [])[1] || '';
+  const oldPlatform =
+    /ucoz|narod\.ru|narod2|jimdo|webnode|a5\.ru|nethouse/i.test(lower.slice(0, 20000)) ? 'конструктор сайтов старого поколения' :
+    /joomla!?\s*(1\.|2\.)/i.test(generator) ? generator :
+    /wordpress\s*[2-4]\./i.test(generator) ? generator :
+    /drupal\s*[5-7]\b/i.test(generator) ? generator : '';
+  if (oldPlatform) add('old_platform', 15, `Устаревшая платформа: ${oldPlatform}`);
+
+  if (/charset=["']?windows-1251/i.test(page.contentType || '') || /<meta[^>]+charset=["']?windows-1251/i.test(html.slice(0, 4000))) {
+    add('cp1251', 5, 'Старая кодировка windows-1251');
+  }
+  if (elapsedMs > 4000) add('slow', 10, `Медленно отвечает (${(elapsedMs / 1000).toFixed(1)} с)`);
+  if (!/<link[^>]+rel=["'][^"']*icon/i.test(html)) add('no_favicon', 3, 'Нет иконки сайта (favicon)');
+
+  const score = Math.min(100, signals.reduce((s, x) => s + x.weight, 0));
+  const level = score >= 50 ? 'outdated' : (score >= 25 ? 'aging' : 'modern');
+  signals.sort((a, b) => b.weight - a.weight);
+  return { status: 'ok', score, level, reasons: signals.map(s => s.text), codes: signals.map(s => s.code), copyrightYear: copyrightYear || null };
+}
+
+async function auditSite(website) {
+  const start = normalizeWebsite(website);
+  if (!start) return { status: 'bad_url' };
+  try { await assertPublicUrl(start); } catch (e) { return { status: 'unreachable', level: 'unreachable', score: null, reasons: ['Сайт не открылся с нашего сервера: он может не работать или закрыт для зарубежных посетителей, проверьте вручную'], codes: ['unreachable'] }; }
+
+  const rules = await getRobotsRules(start.origin);
+  if (!allowedByRobots(rules, start.toString())) return { status: 'robots_disallow' };
+
+  const httpsUrl = new URL(start.toString()); httpsUrl.protocol = 'https:';
+  const t0 = Date.now();
+  let page = await fetchText(httpsUrl.toString());
+  let elapsedMs = Date.now() - t0;
+  if (!page) {
+    const httpUrl = new URL(start.toString()); httpUrl.protocol = 'http:';
+    const t1 = Date.now();
+    page = await fetchText(httpUrl.toString());
+    elapsedMs = Date.now() - t1;
+  }
+  if (!page) return { status: 'unreachable', level: 'unreachable', score: null, reasons: ['Сайт не открылся с нашего сервера: он может не работать или закрыт для зарубежных посетителей, проверьте вручную'], codes: ['unreachable'] };
+  const https = page.url.startsWith('https:');
+  return auditHtml(page, { https, elapsedMs });
 }
 
 // ---------- Routes ----------
@@ -532,6 +624,18 @@ app.post('/api/check-emails', async (req, res) => {
   res.json({ results });
 });
 
+app.post('/api/site-audit', async (req, res) => {
+  if (rateLimited(req.ip)) return res.status(429).json({ error: 'Слишком много запросов, подождите минуту' });
+  const sites = Array.isArray(req.body && req.body.sites) ? req.body.sites : null;
+  if (!sites || !sites.length) return res.status(400).json({ error: 'Передайте sites: [{id, website}]' });
+  if (sites.length > MAX_SITES_PER_REQUEST) return res.status(400).json({ error: `Не больше ${MAX_SITES_PER_REQUEST} сайтов за запрос` });
+  const results = await mapWithConcurrency(sites, CONCURRENCY, async (s) => {
+    const r = await withTimeout(auditSite(s.website).catch(() => ({ status: 'error' })), SITE_TIMEOUT_MS);
+    return { id: s.id, ...r };
+  });
+  res.json({ results });
+});
+
 app.get('/api/ai-status', (req, res) => {
   res.json({ enabled: !!GIGACHAT_AUTH_KEY, certLoaded: russianCa.length > 0, model: GIGACHAT_MODEL });
 });
@@ -549,7 +653,8 @@ app.post('/api/personalize', async (req, res) => {
   const results = await mapWithConcurrency(companies, 3, async (c) => {
     const company = {
       name: String(c.name || '').slice(0, 200), category: String(c.category || '').slice(0, 100),
-      city: String(c.city || '').slice(0, 100), website: String(c.website || '').slice(0, 300)
+      city: String(c.city || '').slice(0, 100), website: String(c.website || '').slice(0, 300),
+      site_issues: String(c.site_issues || '').slice(0, 400)
     };
     try {
       const r = await personalizeOne(offer, company);
@@ -570,4 +675,4 @@ app.post('/api/personalize', async (req, res) => {
 if (require.main === module) {
   app.listen(PORT, () => console.log(`Contact finder API on port ${PORT}`));
 }
-module.exports = { htmlToText, checkEmail, extractEmails, findContactLinks, parseRobots, allowedByRobots, isPrivateIp, decodeCloudflare, app };
+module.exports = { auditHtml, htmlToText, checkEmail, extractEmails, findContactLinks, parseRobots, allowedByRobots, isPrivateIp, decodeCloudflare, app };

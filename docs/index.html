@@ -89,6 +89,9 @@
   .tag.generic { background: rgba(62,207,142,0.15); color: var(--ok); }
   .tag.personal { background: rgba(224,165,74,0.15); color: var(--warn); }
   .tag.source { background: var(--accent-dim); color: var(--accent); text-decoration: none; }
+  .audit-details { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+  .audit-details summary { cursor: pointer; }
+  .audit-details div { padding-left: 8px; }
   .site-status { font-size: 11px; color: var(--text-dim); font-style: italic; }
   .empty-state { padding: 36px 24px; text-align: center; color: var(--text-dim); font-size: 13px; line-height: 1.6; }
   .spinner {
@@ -226,6 +229,17 @@
         <label for="nameKeyword">Слово в названии (необязательно)</label>
         <input type="text" id="nameKeyword" placeholder="например, авто или hertz">
       </div>
+      <div class="field">
+        <label for="siteFilter">Сайт компании</label>
+        <select id="siteFilter">
+          <option value="all">Все компании</option>
+          <option value="opportunity">Нужен новый сайт: нет, не работает или устарел</option>
+          <option value="no_site">Без сайта</option>
+          <option value="outdated">Сайт устарел или стареет</option>
+          <option value="broken">Сайт не работает</option>
+        </select>
+        <div class="hint">Чтобы отличить устаревшие сайты от современных, нажмите «Оценить сайты» после поиска.</div>
+      </div>
       <label class="checkbox-row">
         <input type="checkbox" id="onlyEmail"> Показывать только с почтой
       </label>
@@ -235,6 +249,7 @@
       <button class="primary" id="searchBtn" disabled>Искать в полигоне</button>
       <button id="clearBtn">Очистить</button>
       <button id="crawlBtn" disabled title="Сервер откроет сайты найденных бизнесов и поищет на них почты">Найти почты на сайтах</button>
+      <button id="auditBtn" disabled title="Сервер откроет сайты компаний и оценит, насколько они устарели">Оценить сайты</button>
       <button id="mailBtn" disabled title="Подготовить персональные письма найденным компаниям">Письма</button>
       <button id="exportBtn" disabled>Экспорт CSV</button>
     </div>
@@ -632,6 +647,7 @@ clearBtn.addEventListener('click', () => {
   searchBtn.disabled = true;
   exportBtn.disabled = true;
   crawlBtn.disabled = true;
+  auditBtn.disabled = true;
   updateMailBtn();
   statusText.textContent = 'Нарисуйте полигон на карте.';
   statsEl.style.display = 'none';
@@ -639,6 +655,8 @@ clearBtn.addEventListener('click', () => {
 });
 
 onlyEmailCheckbox.addEventListener('change', () => { if (allRows.length) renderResults(); });
+const siteFilter = document.getElementById('siteFilter');
+siteFilter.addEventListener('change', () => { if (allRows.length) renderResults(); });
 
 // ---------- Query building ----------
 // Ray casting over all rings (even-odd rule): handles multipolygons and holes
@@ -792,7 +810,13 @@ function safeUrl(url) {
 }
 
 function visibleRows() {
-  return onlyEmailCheckbox.checked ? allRows.filter(r => r.emails.length) : allRows;
+  const f = siteFilter.value;
+  return allRows.filter(r => {
+    if (onlyEmailCheckbox.checked && !r.emails.length) return false;
+    if (f === 'all') return true;
+    const o = siteOpportunity(r);
+    return f === 'opportunity' ? !!o : o === f;
+  });
 }
 
 function renderStats() {
@@ -802,13 +826,17 @@ function renderStats() {
   const withSite = allRows.filter(r => r.website).length;
   const checked = allRows.filter(r => r.site_status).length;
   const brokenEmails = [...new Set(allRows.flatMap(r => r.emails))].filter(isBadEmail).length;
+  const audited = allRows.some(r => r.site_audit);
   statsEl.innerHTML = `
     <span class="stat">Всего: <b>${total}</b></span>
     <span class="stat">С почтой: <b>${withEmail}</b></span>
     <span class="stat">С телефоном: <b>${withPhone}</b></span>
     <span class="stat">С сайтом: <b>${withSite}</b></span>
     ${checked ? `<span class="stat">Сайтов проверено: <b>${checked}</b></span>` : ''}
-    ${brokenEmails ? `<span class="stat">Нерабочих почт: <b>${brokenEmails}</b></span>` : ''}`;
+    ${brokenEmails ? `<span class="stat">Нерабочих почт: <b>${brokenEmails}</b></span>` : ''}
+    <span class="stat">Без сайта: <b>${total - withSite}</b></span>
+    ${audited ? `<span class="stat">Сайт устарел: <b>${allRows.filter(r => siteOpportunity(r) === 'outdated').length}</b></span>
+    <span class="stat">Не работает: <b>${allRows.filter(r => siteOpportunity(r) === 'broken').length}</b></span>` : ''}`;
   statsEl.style.display = total ? 'flex' : 'none';
 }
 
@@ -818,7 +846,7 @@ function renderResults() {
 
   if (rows.length === 0) {
     resultsEl.innerHTML = allRows.length
-      ? '<div class="empty-state">Ни у одного найденного объекта нет почты в OSM. Снимите галочку «только с почтой», чтобы увидеть телефоны и сайты.</div>'
+      ? '<div class="empty-state">Под выбранные фильтры ничего не подходит. Смените фильтр «Сайт компании» или снимите галочку «только с почтой». Если выбран фильтр по устаревшим сайтам, сначала нажмите «Оценить сайты».</div>'
       : '<div class="empty-state">В этой области ничего не найдено по данным OSM. Попробуйте расширить область или выбрать другой тип.</div>';
     exportBtn.disabled = true;
     return;
@@ -849,7 +877,9 @@ function renderResults() {
       ? `<span class="site-status">${escapeHtml(r.site_status === 'ok' ? 'на сайте почта не найдена' : SITE_STATUS_LABELS[r.site_status] || r.site_status)}</span><br>`
       : '';
     const phonesHtml = r.phones.map(p => `☎ <a href="tel:${escapeHtml(p.replace(/[^\d+]/g, ''))}">${escapeHtml(p)}</a><br>`).join('');
-    const siteHtml = r.website ? `🌐 <a href="${escapeHtml(safeUrl(r.website))}" target="_blank" rel="noopener">${escapeHtml(r.website)}</a><br>` : '';
+    const siteHtml = r.website
+      ? `🌐 <a href="${escapeHtml(safeUrl(r.website))}" target="_blank" rel="noopener">${escapeHtml(r.website)}</a>${auditTagHtml(r)}<br>${auditDetailsHtml(r)}`
+      : `${auditTagHtml(r)}<br>`;
     const socials = [
       r.telegram && `Telegram: ${escapeHtml(r.telegram)}`,
       r.whatsapp && `WhatsApp: ${escapeHtml(r.whatsapp)}`,
@@ -869,7 +899,7 @@ function renderResults() {
         ${siteStatusHtml}
       </div>`;
     item.addEventListener('click', (ev) => {
-      if (ev.target.tagName === 'A') return;
+      if (ev.target.tagName === 'A' || ev.target.closest('details')) return;
       map.setView([r.lat, r.lon], 16);
       marker.openPopup();
     });
@@ -958,6 +988,7 @@ searchBtn.addEventListener('click', async () => {
   searchBtn.disabled = true;
   exportBtn.disabled = true;
   crawlBtn.disabled = true;
+  auditBtn.disabled = true;
   mailBtn.disabled = true;
   statsEl.style.display = 'none';
   resultsEl.innerHTML = '';
@@ -975,6 +1006,7 @@ searchBtn.addEventListener('click', async () => {
     renderStats();
     renderResults();
     updateCrawlBtn();
+    updateAuditBtn();
     checkEmailsInBackground();
   } catch (err) {
     allRows = [];
@@ -1110,6 +1142,118 @@ crawlBtn.addEventListener('click', async () => {
   checkEmailsInBackground();
   crawlStop = false;
   updateCrawlBtn();
+});
+
+// ---------- Website audit (via backend): outdated, broken or missing sites ----------
+const auditBtn = document.getElementById('auditBtn');
+const AUDIT_LABELS = {
+  modern: ['generic', 'сайт современный'],
+  aging: ['warn', 'сайт стареет'],
+  outdated: ['stop', 'сайт устарел'],
+  broken: ['stop', 'сайт не работает'],
+  unreachable: ['warn', 'сайт не открылся']
+};
+// Phrases for the {проблемы_сайта} template variable: [full, continuation], in order of persuasiveness
+const ISSUE_PHRASES = [
+  ['broken', 'вместо сайта открывается заглушка', 'вместо сайта открывается заглушка'],
+  ['no_viewport', 'сайт неудобно открывается с телефона', 'неудобно открывается с телефона'],
+  ['no_https', 'сайт работает без защищённого соединения', 'работает без защищённого соединения'],
+  ['flash', 'часть сайта сделана на Flash и не открывается в современных браузерах', 'частично сделан на Flash'],
+  ['old_copyright', 'сайт давно не обновлялся', 'давно не обновлялся'],
+  ['slow', 'сайт медленно загружается', 'медленно загружается'],
+  ['tech', 'сайт сделан на устаревших технологиях', 'сделан на устаревших технологиях']
+];
+const TECH_CODES = ['frames', 'old_platform', 'old_markup', 'table_layout', 'old_doctype', 'old_jquery'];
+let auditRunning = false;
+let auditStop = false;
+
+function siteIssuesPhrase(row) {
+  if (!row.website) return 'на картах у компании не указан сайт';
+  const a = row.site_audit;
+  if (!a || !a.codes) return '';
+  const codes = new Set(a.codes.map(c => (TECH_CODES.includes(c) ? 'tech' : c)));
+  const found = ISSUE_PHRASES.filter(([code]) => codes.has(code)).slice(0, 2);
+  if (!found.length) return '';
+  if (found[0][0] === 'broken') return found[0][1];
+  return found.length === 1 ? found[0][1] : `${found[0][1]} и ${found[1][2]}`;
+}
+function siteOpportunity(row) {
+  if (!row.website) return 'no_site';
+  const lvl = row.site_audit && row.site_audit.level;
+  if (lvl === 'broken') return 'broken';
+  if (lvl === 'outdated' || lvl === 'aging') return 'outdated';
+  return '';
+}
+function auditTagHtml(row) {
+  if (!row.website) return '<span class="tag source">нет сайта</span>';
+  const a = row.site_audit;
+  if (!a || !AUDIT_LABELS[a.level]) return '';
+  const [cls, label] = AUDIT_LABELS[a.level];
+  return `<span class="tag ${cls}">${label}${a.score != null && a.level !== 'broken' ? ` · ${a.score}/100` : ''}</span>`;
+}
+function auditDetailsHtml(row) {
+  const a = row.site_audit;
+  if (!a || !a.reasons || !a.reasons.length) return '';
+  return `<details class="audit-details"><summary>Почему (${a.reasons.length})</summary>${a.reasons.map(t => `<div>• ${escapeHtml(t)}</div>`).join('')}</details>`;
+}
+
+function auditCandidates() { return allRows.filter(r => r.website && !r.site_audit); }
+function updateAuditBtn() {
+  if (auditRunning) { auditBtn.textContent = 'Остановить оценку'; auditBtn.disabled = false; return; }
+  const n = auditCandidates().length;
+  auditBtn.textContent = n ? `Оценить сайты (${n})` : (allRows.some(r => r.site_audit) ? 'Сайты оценены' : 'Оценить сайты');
+  auditBtn.disabled = !n;
+}
+
+auditBtn.addEventListener('click', async () => {
+  if (auditRunning) { auditStop = true; auditBtn.disabled = true; auditBtn.textContent = 'Останавливаю...'; return; }
+  const queue = auditCandidates();
+  if (!queue.length) return;
+  const gen = searchGen;
+  auditRunning = true;
+  auditStop = false;
+  updateAuditBtn();
+  let done = 0, errors = 0;
+  for (let i = 0; i < queue.length; i += 10) {
+    if (auditStop || gen !== searchGen) break;
+    const batch = queue.slice(i, i + 10);
+    statusText.innerHTML = `<span class="spinner"></span>Оцениваю сайты: ${done} из ${queue.length}${done === 0 ? ' (сервер может просыпаться до минуты)' : ''}...`;
+    try {
+      const resp = await fetchWithTimeout(CRAWLER_API + '/api/site-audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sites: batch.map(r => ({ id: r.id, website: r.website })) })
+      }, 150000);
+      if (gen !== searchGen) break;
+      if (resp.status === 429) { await sleep(30000); i -= 10; continue; }
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
+      data.results.forEach(res => {
+        const row = allRows.find(r => r.id === res.id);
+        if (row) row.site_audit = res;
+      });
+      regenerateDrafts();
+      errors = 0;
+    } catch (e) {
+      if (gen !== searchGen) break;
+      if (++errors >= 3) break;
+      continue;
+    }
+    done += batch.length;
+    renderStats();
+    renderResults();
+  }
+  auditRunning = false;
+  if (gen !== searchGen) { updateAuditBtn(); return; }
+  const outdated = allRows.filter(r => siteOpportunity(r) === 'outdated').length;
+  const broken = allRows.filter(r => siteOpportunity(r) === 'broken').length;
+  statusText.textContent = errors >= 3
+    ? 'Сервер перестал отвечать. Оценённое сохранено, можно продолжить позже.'
+    : `${auditStop ? 'Оценка остановлена' : 'Готово'}. Устаревших сайтов: ${outdated}, не работают: ${broken}, без сайта: ${allRows.filter(r => !r.website).length}.`;
+  auditStop = false;
+  updateAuditBtn();
+  renderStats();
+  renderResults();
 });
 
 // ---------- Email checks (via backend: syntax, typos, domain and MX records) ----------
@@ -1324,6 +1468,7 @@ const TEMPLATE_VARS = [
   ['адрес', r => r.address],
   ['сайт', r => r.website],
   ['персонализация', r => r.ai_text],
+  ['проблемы_сайта', r => r.site_issues !== undefined ? r.site_issues : siteIssuesPhrase(r)],
   ['тема_письма', r => r.lastSubject, 'follow'],
   ['дата_письма', r => fmtDate(r.lastSentDate), 'follow']
 ];
@@ -1359,7 +1504,7 @@ let mailPage = 1;
 })();
 
 function snapshot(row) {
-  return { name: row.name, category: row.category, city: row.city, address: row.address, website: row.website, ai_text: row.ai_text || '' };
+  return { name: row.name, category: row.category, city: row.city, address: row.address, website: row.website, ai_text: row.ai_text || '', site_issues: siteIssuesPhrase(row) };
 }
 function saveLog() { saveJSON(LOG_KEY, contactLog); }
 function logEvent(key, text) {
@@ -1505,7 +1650,7 @@ async function personalizeRows(rows) {
       const resp = await fetchWithTimeout(CRAWLER_API + '/api/personalize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ offer, companies: batch.map(r => ({ id: r.id, name: r.name, category: r.category, city: r.city, website: r.website })) })
+        body: JSON.stringify({ offer, companies: batch.map(r => ({ id: r.id, name: r.name, category: r.category, city: r.city, website: r.website, site_issues: siteIssuesPhrase(r) })) })
       }, 180000);
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) {
@@ -1953,7 +2098,7 @@ exportBtn.addEventListener('click', () => {
     ['name', 'Название'], ['category', 'Категория'], ['emails', 'Почта'], ['email_types', 'Тип почты'], ['email_sources', 'Источник почты'],
     ['phones', 'Телефон'], ['website', 'Сайт'], ['telegram', 'Telegram'], ['whatsapp', 'WhatsApp'],
     ['vk', 'VK'], ['instagram', 'Instagram'], ['address', 'Адрес'], ['opening_hours', 'Часы работы'],
-    ['site_status', 'Проверка сайта'], ['email_checks', 'Проверка почты'], ['contact_status', 'Статус контакта'], ['ai_personalization', 'Персонализация'], ['lat', 'Широта'], ['lon', 'Долгота'], ['id', 'OSM ID']
+    ['site_status', 'Проверка сайта'], ['site_grade', 'Оценка сайта'], ['site_reasons', 'Проблемы сайта'], ['email_checks', 'Проверка почты'], ['contact_status', 'Статус контакта'], ['ai_personalization', 'Персонализация'], ['lat', 'Широта'], ['lon', 'Долгота'], ['id', 'OSM ID']
   ];
   rows.forEach(r => {
     r.contact_status = allContactKeys(r)
@@ -1963,6 +2108,9 @@ exportBtn.addEventListener('click', () => {
       })
       .filter(Boolean);
     r.ai_personalization = r.ai_text || '';
+    const a = r.site_audit;
+    r.site_grade = !r.website ? 'нет сайта' : (a && AUDIT_LABELS[a.level] ? AUDIT_LABELS[a.level][1] + (a.score != null ? ` (${a.score}/100)` : '') : '');
+    r.site_reasons = a && a.reasons ? a.reasons : [];
     r.email_checks = r.emails
       .map(e => { const c = emailChecks.get(e); return c ? `${e}: ${c.status === 'ok' ? 'ок' : (c.status === 'typo' ? 'опечатка? ' + c.suggestion : EMAIL_CHECK_LABELS[c.status] || c.status)}` : ''; })
       .filter(Boolean);
