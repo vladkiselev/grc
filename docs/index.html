@@ -252,6 +252,7 @@
       <button id="auditBtn" disabled title="Сервер откроет сайты компаний и оценит, насколько они устарели">Оценить сайты</button>
       <button id="mailBtn" disabled title="Подготовить персональные письма найденным компаниям">Письма</button>
       <button id="exportBtn" disabled>Экспорт CSV</button>
+      <button id="siteExportBtn" disabled title="Только компании, их сайты и оценка сайтов">CSV: сайты</button>
     </div>
 
     <div id="status">
@@ -452,6 +453,7 @@ const onlyEmailCheckbox = document.getElementById('onlyEmail');
 const searchBtn = document.getElementById('searchBtn');
 const clearBtn = document.getElementById('clearBtn');
 const exportBtn = document.getElementById('exportBtn');
+const siteExportBtn = document.getElementById('siteExportBtn');
 const crawlBtn = document.getElementById('crawlBtn');
 
 // Адрес сервера, который ищет почты на сайтах (Render Web Service)
@@ -646,6 +648,7 @@ clearBtn.addEventListener('click', () => {
   drafts = new Map();
   searchBtn.disabled = true;
   exportBtn.disabled = true;
+  siteExportBtn.disabled = true;
   crawlBtn.disabled = true;
   auditBtn.disabled = true;
   updateMailBtn();
@@ -849,6 +852,7 @@ function renderResults() {
       ? '<div class="empty-state">Под выбранные фильтры ничего не подходит. Смените фильтр «Сайт компании» или снимите галочку «только с почтой». Если выбран фильтр по устаревшим сайтам, сначала нажмите «Оценить сайты».</div>'
       : '<div class="empty-state">В этой области ничего не найдено по данным OSM. Попробуйте расширить область или выбрать другой тип.</div>';
     exportBtn.disabled = true;
+    siteExportBtn.disabled = true;
     return;
   }
 
@@ -911,6 +915,7 @@ function renderResults() {
   resultsEl.appendChild(frag);
   resultsEl.scrollTop = scrollTop;
   exportBtn.disabled = false;
+  siteExportBtn.disabled = false;
   updateMailBtn();
 }
 
@@ -987,6 +992,7 @@ searchBtn.addEventListener('click', async () => {
   drafts = new Map();
   searchBtn.disabled = true;
   exportBtn.disabled = true;
+  siteExportBtn.disabled = true;
   crawlBtn.disabled = true;
   auditBtn.disabled = true;
   mailBtn.disabled = true;
@@ -2115,17 +2121,52 @@ exportBtn.addEventListener('click', () => {
       .map(e => { const c = emailChecks.get(e); return c ? `${e}: ${c.status === 'ok' ? 'ок' : (c.status === 'typo' ? 'опечатка? ' + c.suggestion : EMAIL_CHECK_LABELS[c.status] || c.status)}` : ''; })
       .filter(Boolean);
   });
+  downloadCsv(columns, rows, `${typeSelect.value}_${new Date().toISOString().slice(0, 10)}.csv`);
+});
+
+function downloadCsv(columns, rows, filename) {
   const cell = (v) => `"${(Array.isArray(v) ? v.join(', ') : (v ?? '')).toString().replace(/"/g, '""')}"`;
   const lines = [columns.map(c => cell(c[1])).join(';')];
   rows.forEach(r => lines.push(columns.map(c => cell(r[c[0]])).join(';')));
-
   const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${typeSelect.value}_${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
   URL.revokeObjectURL(url);
+}
+
+// ---------- CSV: companies and their websites with the audit grade ----------
+// Sorted by how much the company needs a new site: broken first, then outdated by score, then without a site
+const SITE_EXPORT_ORDER = { broken: 0, outdated: 1, aging: 2, no_site: 3, unreachable: 4, modern: 5, not_checked: 6 };
+function siteGradeKey(r) {
+  if (!r.website) return 'no_site';
+  return (r.site_audit && AUDIT_LABELS[r.site_audit.level]) ? r.site_audit.level : 'not_checked';
+}
+siteExportBtn.addEventListener('click', () => {
+  const rows = visibleRows().map(r => {
+    const a = r.site_audit;
+    const key = siteGradeKey(r);
+    return {
+      name: r.name,
+      category: r.category,
+      address: r.address,
+      website: r.website || '',
+      grade: key === 'no_site' ? 'нет сайта' : (key === 'not_checked' ? 'не оценён' : AUDIT_LABELS[key][1]),
+      score: a && a.score != null ? a.score : '',
+      reasons: a && a.reasons ? a.reasons.join('; ') : '',
+      pitch: siteIssuesPhrase(r),
+      _order: SITE_EXPORT_ORDER[key],
+      _score: a && a.score != null ? a.score : -1
+    };
+  }).sort((x, y) => (x._order - y._order) || (y._score - x._score) || x.name.localeCompare(y.name, 'ru'));
+  if (!rows.length) return;
+  const columns = [
+    ['name', 'Название'], ['category', 'Категория'], ['address', 'Адрес'], ['website', 'Сайт'],
+    ['grade', 'Оценка'], ['score', 'Балл устаревания (0–100)'], ['reasons', 'Проблемы сайта'], ['pitch', 'Фраза для письма']
+  ];
+  downloadCsv(columns, rows, `sites_${typeSelect.value}_${new Date().toISOString().slice(0, 10)}.csv`);
 });
 </script>
 </body>
